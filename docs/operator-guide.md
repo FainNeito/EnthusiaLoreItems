@@ -57,27 +57,25 @@ shared-containers-allowed: true
 
 `shared-containers-allowed: true` is the default and leaves nested shulker/bundle storage unrestricted. Set it to `false` to prohibit players from inserting LoreItems into either shulkers or bundles; removing an existing LoreItem from those containers remains allowed.
 
-### Startup-only settings
+### Restart-required settings
 
-These require a full server restart after change:
+These are captured by storage resources or startup-created workers and require a clean server restart after change:
 
 - `database-busy-timeout-millis`
 - `database-queue-capacity`
 - `database-shutdown-timeout-seconds`
-
-### Reloadable settings
-
-These are loaded as one validated configuration snapshot and must not partially replace the active configuration:
-
 - `delivery-claim-batch-size`
 - `delivery-claim-lease-seconds`
 - `duplicate-warning-interval-seconds`
 - `default-page-size`
 - `max-page-size`
 - `mutation-budget-per-tick`
-- `shared-containers-allowed`
 
-A failed reload must leave the previous complete snapshot active. Reload must not discard active deliveries, mutations, campaigns, or destructive work. If the installed build does not expose a documented operator-facing reload action for the desired setting, use a clean restart instead of relying on Bukkit `/reload`.
+### Hot-reloadable setting
+
+Only `shared-containers-allowed` is currently hot reloadable. After changing it, run `/loreitems reload` with `enthusia.loreitems.admin.reload`. The plugin validates the complete candidate snapshot off the server thread and atomically swaps it only when valid and when all restart-required settings still match the running snapshot.
+
+A failed reload, or a reload that also changes a restart-required setting, leaves the previous complete snapshot active. Reload must not discard active deliveries, mutations, campaigns, or destructive work. Do not use Bukkit/Paper `/reload` as a substitute; use a clean server restart for every restart-required setting.
 
 ## Permissions
 
