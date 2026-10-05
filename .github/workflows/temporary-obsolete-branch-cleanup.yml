@@ -1,0 +1,29 @@
+name: Temporary obsolete branch cleanup
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete exact obsolete refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=(
+            "audit/v1.0.0-exact-candidate"
+            "audit/v1.0.0-main-parent-base"
+            "audit/v1.0.0-premerge-base"
+            "audit/v1.0.0-preproduction-report"
+            "pr30-codacy-repair-staging-v2"
+            "verify/sentinel-sim-pr30-7ff2fd8c"
+          )
+          for branch in "${branches[@]}"; do
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+            fi
+          done
