@@ -29,6 +29,7 @@ import net.enthusia.loreitems.sqlite.SQLiteAnomalyRepository;
 import net.enthusia.loreitems.sqlite.SQLiteAuditRepository;
 import net.enthusia.loreitems.sqlite.SQLiteCurrentStateRepository;
 import net.enthusia.loreitems.sqlite.SQLiteDirectDeliveryRepository;
+import net.enthusia.loreitems.sqlite.SQLiteDefinitionRepository;
 import net.enthusia.loreitems.sqlite.SQLiteDisplayItemObservationStore;
 import net.enthusia.loreitems.sqlite.SQLiteHeldItemAdoptionStore;
 import net.enthusia.loreitems.sqlite.SQLiteItemAnomalyObservationStore;
@@ -56,7 +57,7 @@ final class LoreItemsStorageServices {
         return new Services(
                 repositories,
                 new WritableServices(
-                        deliveryService(repositories.deliveries(), clock),
+                        deliveryService(repositories.deliveries(), runtime, clock),
                         directDelivery(repositories.deliveries(), configuration, clock),
                         new PersistingCreateDefinitionUseCase(new SQLiteUnitOfWork(runtime), clock),
                         adoptHeldItem(runtime, configuration, clock),
@@ -72,9 +73,11 @@ final class LoreItemsStorageServices {
 
     private static LoreItemsServiceV1 deliveryService(
             SQLiteDirectDeliveryRepository deliveries,
+            SQLiteStorageRuntime runtime,
             Clock clock) {
         return new FoundationLoreItemsService(
-                new PersistingExternalDeliveryUseCase(deliveries, clock));
+                new PersistingExternalDeliveryUseCase(deliveries, clock),
+                new SQLiteDefinitionRepository(runtime));
     }
 
     private static DirectDeliveryExecutionUseCase directDelivery(
