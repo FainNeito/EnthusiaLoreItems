@@ -1,6 +1,7 @@
 package net.enthusia.loreitems.plugin;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -10,13 +11,40 @@ import net.enthusia.loreitems.api.v1.LoreItemsServiceV1;
 import net.enthusia.loreitems.application.ExternalDeliveryCommand;
 import net.enthusia.loreitems.application.ExternalDeliveryOutcome;
 import net.enthusia.loreitems.application.ExternalDeliveryUseCase;
+import net.enthusia.loreitems.application.DefinitionRepository;
 import net.enthusia.loreitems.domain.DefinitionKey;
 
 final class FoundationLoreItemsService implements LoreItemsServiceV1 {
     private final ExternalDeliveryUseCase useCase;
+    private final Optional<DefinitionRepository> definitions;
 
     FoundationLoreItemsService(ExternalDeliveryUseCase useCase) {
         this.useCase = Objects.requireNonNull(useCase, "useCase");
+        this.definitions = Optional.empty();
+    }
+
+    FoundationLoreItemsService(ExternalDeliveryUseCase useCase, DefinitionRepository definitions) {
+        this.useCase = Objects.requireNonNull(useCase, "useCase");
+        this.definitions = Optional.of(Objects.requireNonNull(definitions, "definitions"));
+    }
+
+    @Override
+    public CompletionStage<Boolean> isDefinitionActive(String definitionKey) {
+        if (definitions.isEmpty()) {
+            return LoreItemsServiceV1.super.isDefinitionActive(definitionKey);
+        }
+        final DefinitionKey key;
+        try {
+            key = new DefinitionKey(definitionKey);
+        } catch (RuntimeException invalid) {
+            return CompletableFuture.completedFuture(false);
+        }
+        try {
+            return definitions.orElseThrow().findActiveByKey(key)
+                    .thenApply(found -> found.filter(definition -> definition.active()).isPresent());
+        } catch (RuntimeException unavailable) {
+            return CompletableFuture.failedFuture(unavailable);
+        }
     }
 
     @Override
