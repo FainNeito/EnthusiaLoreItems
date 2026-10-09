@@ -164,10 +164,13 @@ with sqlite3.connect(path) as c:
     obs=c.execute('select location_type,container_path,confidence,source from instance_observations where instance_id=? order by observation_id',(iid,)).fetchall()
     paths={(kind,slot) for kind,slot,_,_ in obs}
     print('TRACK1 observations',obs)
-    assert any(kind=='PLAYER_INVENTORY' and slot=='offhand' for kind,slot in paths),paths
-    assert any(kind=='PLAYER_INVENTORY' and slot and slot.startswith('armor:') for kind,slot in paths),paths
-    assert any(kind=='PLAYER_INVENTORY' and slot=='cursor' for kind,slot in paths),paths
+    # One inventory can have many slots; only holder transitions belong in
+    # durable user-facing history, not offhand/armor/cursor rearrangements.
+    assert any(kind=='PLAYER_INVENTORY' for kind,slot in paths),paths
     assert any(kind=='PLAYER_ENDER_CHEST' for kind,slot in paths),paths
+    assert not any(kind=='PLAYER_INVENTORY' and slot=='offhand' for kind,slot in paths),paths
+    assert not any(kind=='PLAYER_INVENTORY' and slot and slot.startswith('armor:') for kind,slot in paths),paths
+    assert not any(kind=='PLAYER_INVENTORY' and slot=='cursor' for kind,slot in paths),paths
     state=c.execute('select state,location_type from instance_current_state where instance_id=?',(iid,)).fetchone()
     assert state and state[0]=='LAST_CONFIRMED',state
 PY

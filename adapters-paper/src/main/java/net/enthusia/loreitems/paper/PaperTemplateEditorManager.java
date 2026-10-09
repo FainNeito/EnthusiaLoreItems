@@ -124,7 +124,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
             return;
         }
         if (session.state == PaperTemplateEditorSession.State.CONFIRMING) {
-            LoreItemsMessages.send(player, 
+            LoreItemsMessages.send(player,
                     "Template confirmation is already processing and cannot be cancelled; reopen management to check durable status.");
             return;
         }
@@ -194,7 +194,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
             return;
         }
         if (sessions.containsKey(player.getUniqueId())) {
-            LoreItemsMessages.send(player, 
+            LoreItemsMessages.send(player,
                     "You already have an active template draft. Use /loreitems editor cancel to discard it safely before starting another.");
             return;
         }

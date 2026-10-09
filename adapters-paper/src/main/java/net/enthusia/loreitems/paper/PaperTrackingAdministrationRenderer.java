@@ -2,14 +2,13 @@ package net.enthusia.loreitems.paper;
 
 import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.decorate;
 import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.decorateNested;
-import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.describe;
+
 import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.evidenceItem;
 import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.item;
-import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.shortId;
-import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.trackingMetricsLore;
 
-import java.time.Instant;
-import java.time.format.DateTimeFormatter;
+import static net.enthusia.loreitems.paper.PaperTrackingAdministrationItems.formatTime;
+
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -35,13 +34,13 @@ final class PaperTrackingAdministrationRenderer {
     private static final int CANCEL = 11;
     private static final int CONTEXT = 13;
     private static final int CONFIRM = 15;
-    private static final DateTimeFormatter TIME_FORMAT =
-            DateTimeFormatter.ISO_INSTANT;
 
     private final Plugin plugin;
+    private final PaperFriendlyLocation places;
 
     PaperTrackingAdministrationRenderer(Plugin plugin) {
         this.plugin = java.util.Objects.requireNonNull(plugin, "plugin");
+        this.places = new PaperFriendlyLocation(plugin);
         new PaperDestructiveAdministrationGuiBridge(plugin);
     }
 
@@ -57,13 +56,12 @@ final class PaperTrackingAdministrationRenderer {
                     item(
                             Material.BOOK,
                             definition.displayName(),
-                            PaperGuiStyle.Tone.INFO,
+                            PaperGuiStyle.Tone.PRIMARY,
                             List.of(
-                                    "Key: " + definition.key().value(),
-                                    "Revision: " + definition.currentRevision().value(),
-                                    "Status: " + (definition.active() ? "Active" : "Deleted"),
+                                    "Status: " + (definition.active() ? "Active collection" : "Unavailable"),
                                     "",
-                                    "Click to manage this template.")));
+                                    "Click to edit or browse tracked copies.",
+                                    "Technical details are available in management.")));
         }
         if (ids.isEmpty()) {
             inventory.setItem(
@@ -74,7 +72,9 @@ final class PaperTrackingAdministrationRenderer {
                             PaperGuiStyle.Tone.INFO,
                             List.of("Use the page controls below to continue browsing.")));
         }
-        decorate(inventory, pageNumber, page.hasMore(), trackingMetricsLore(plugin));
+        decorate(inventory, pageNumber, page.hasMore(),
+                List.of("Browse collections and their tracked copies.",
+                        "Shift-click this clock for diagnostics."));
         player.openInventory(inventory);
     }
 
@@ -96,8 +96,8 @@ final class PaperTrackingAdministrationRenderer {
                     index,
                     item(
                             Material.NETHER_STAR,
-                            "Instance " + shortId(instance.id().value()),
-                            PaperGuiStyle.Tone.INFO,
+                            "Tracked copy #" + ((pageNumber - 1) * 45 + index + 1),
+                            PaperGuiStyle.Tone.PRIMARY,
                             instanceLore(instance, canRemove)));
         }
         if (ids.isEmpty()) {
@@ -115,7 +115,9 @@ final class PaperTrackingAdministrationRenderer {
                 page.hasMore(),
                 "Back to template",
                 List.of("Return to template management."),
-                trackingMetricsLore(plugin));
+                List.of("Left-click a copy to see where it is.",
+                        "History records moves between places.",
+                        "Shift-click a copy for its tracking ID."));
         player.openInventory(inventory);
     }
 
@@ -140,6 +142,8 @@ final class PaperTrackingAdministrationRenderer {
                 duplicate);
         Inventory inventory = createInventory(view, "Lore location evidence");
         populateEvidence(inventory, choices, duplicate);
+        inventory.setItem(PaperTrackingAdministrationItems.CURRENT_LOCATION,
+                currentLocationItem(data.current(), duplicate));
         if (choices.isEmpty()) {
             inventory.setItem(
                     22,
@@ -190,11 +194,9 @@ final class PaperTrackingAdministrationRenderer {
                         "Selected location",
                         PaperGuiStyle.Tone.METADATA,
                         List.of(
-                                describe(observation.location()),
-                                "Confidence: " + observation.confidence().name(),
-                                "Source: " + observation.source(),
+                                "Location: " + places.describe(observation.location()),
+                                "Status: Review potential duplicate",
                                 "",
-                                "Instance: " + shortId(instanceId.value()),
                                 "No physical copy will be deleted.")));
         inventory.setItem(
                 CONFIRM,
@@ -210,18 +212,18 @@ final class PaperTrackingAdministrationRenderer {
 
     private static List<String> instanceLore(LoreInstance instance, boolean canRemove) {
         List<String> lore = new ArrayList<>(List.of(
-                "Lifecycle: " + instance.lifecycle().name(),
-                "Applied revision: " + instance.appliedRevision().value(),
-                "Desired revision: " + instance.desiredRevision().value(),
-                "Created: " + formatTime(instance.createdAtEpochMillis())));
-        if (instance.terminalAtEpochMillis() != null) {
-            lore.add("Terminal: " + formatTime(instance.terminalAtEpochMillis()));
-        }
-        lore.add("");
-        lore.add("Left-click to inspect location evidence.");
+                "Status: " + switch (instance.lifecycle()) {
+                    case ACTIVE -> "Tracked and active";
+                    case VOID_DESTROYED -> "Destroyed in void";
+                    case REMOVED -> "Removed";
+                },
+                "Created: " + formatTime(instance.createdAtEpochMillis()),
+                "",
+                "Left-click to see current location and history."));
         if (canRemove) {
-            lore.add("Right-click to preview physical removal.");
+            lore.add("Use removal tools for safe deletion.");
         }
+        lore.add("Shift-click for technical details.");
         return lore;
     }
 
@@ -239,14 +241,40 @@ final class PaperTrackingAdministrationRenderer {
     }
 
     private List<ObservationChoice> observationChoices(Page<InstanceObservation> observations) {
-        return observations.items().stream()
-                .map(observation -> new ObservationChoice(
-                        observation.observationId(),
-                        observation.location(),
-                        observation.confidence(),
-                        observation.source(),
-                        observation.observedAtEpochMillis()))
-                .toList();
+        // Existing databases may contain thousands of historical slot moves.
+        // Hide consecutive observations inside one inventory; retain transfers
+        // between holders and all conflicting evidence for staff review.
+        List<ObservationChoice> visible = new ArrayList<>();
+        for (InstanceObservation observation : observations.items()) {
+            ObservationChoice entry = toChoice(observation);
+            if (!visible.isEmpty() && isRepeatedPlace(visible.getLast(), entry)) {
+                continue;
+            }
+            visible.add(entry);
+        }
+        return List.copyOf(visible);
+    }
+
+    private static ObservationChoice toChoice(InstanceObservation observation) {
+        return new ObservationChoice(
+                observation.observationId(),
+                observation.location(),
+                observation.confidence(),
+                observation.source(),
+                observation.observedAtEpochMillis());
+    }
+
+    private static boolean isRepeatedPlace(ObservationChoice previous, ObservationChoice current) {
+        if (previous.confidence() != current.confidence()
+                || previous.confidence() == InstanceObservation.Confidence.CONFLICTING
+                || previous.location().type() != current.location().type()
+                || !previous.location().locationKey().equals(current.location().locationKey())) {
+            return false;
+        }
+        return switch (current.location().type()) {
+            case PLAYER_INVENTORY, PLAYER_ENDER_CHEST, BLOCK_CONTAINER -> true;
+            default -> false;
+        };
     }
 
     private void populateEvidence(
@@ -254,29 +282,54 @@ final class PaperTrackingAdministrationRenderer {
             List<ObservationChoice> choices,
             DuplicateChoice duplicate) {
         for (int index = 0; index < choices.size() && index < CONTENT; index++) {
-            inventory.setItem(index, evidenceItem(choices.get(index), duplicate));
+            inventory.setItem(index, evidenceItem(places, choices.get(index), duplicate));
         }
     }
 
     private List<String> evidenceStatus(
             Optional<InstanceCurrentState> current, DuplicateChoice duplicate) {
-        List<String> status = new ArrayList<>();
-        status.add(current
-                .map(state -> "Current: " + state.state().name() + " — "
-                        + (state.location() == null
-                                ? "No confirmed location"
-                                : describe(state.location())))
-                .orElse("Current: No current-state row"));
-        status.add(duplicate == null
-                ? "Conflict: No active duplicate resolution"
-                : "Conflict: Active — selectable observations are marked");
-        status.add("");
-        status.addAll(trackingMetricsLore(plugin));
-        return status;
+        return List.of(
+                "Now: " + current.map(this::currentSummary).orElse("Location not known"),
+                duplicate == null ? "Status: No known duplicate conflict"
+                        : "Warning: Duplicate locations need review",
+                "Shift-click history entries for raw details.");
     }
 
-    private static String formatTime(long epochMillis) {
-        return TIME_FORMAT.format(Instant.ofEpochMilli(epochMillis));
+    private String currentSummary(InstanceCurrentState state) {
+        if (state.state() == InstanceCurrentState.State.MISSING_UNRESOLVED) {
+            return "Possibly deleted - location unresolved";
+        }
+        if (state.location() == null) {
+            return "Not currently located";
+        }
+        return places.describe(state.location());
+    }
+
+    private org.bukkit.inventory.ItemStack currentLocationItem(
+            Optional<InstanceCurrentState> current, DuplicateChoice duplicate) {
+        List<String> lore = new ArrayList<>();
+        lore.add("Now: " + current.map(this::currentSummary).orElse("Unknown"));
+        if (current.isPresent()) {
+            InstanceCurrentState state = current.orElseThrow();
+            if (state.state() == InstanceCurrentState.State.MISSING_UNRESOLVED) {
+                lore.add("Warning: Item may have been deleted in Creative");
+                lore.add("History is preserved in case it is found again.");
+            } else if (state.state() == InstanceCurrentState.State.LAST_CONFIRMED) {
+                lore.add("Status: Last seen here (not verified live)");
+            } else if (state.state() == InstanceCurrentState.State.CONFLICTING) {
+                lore.add("Warning: More than one location reported");
+            } else if (state.state() == InstanceCurrentState.State.CONFIRMED_NOW) {
+                lore.add("Status: Location confirmed");
+            }
+            lore.add("Updated: " + formatTime(state.updatedAtEpochMillis()));
+        }
+        if (duplicate != null) {
+            lore.add("Warning: Duplicate review needed");
+        }
+        lore.add("");
+        lore.add("Click to refresh the current location.");
+        return item(Material.RECOVERY_COMPASS, "CURRENT LOCATION",
+                duplicate != null ? PaperGuiStyle.Tone.WARNING : PaperGuiStyle.Tone.POSITIVE, lore);
     }
 
     private static Inventory createInventory(

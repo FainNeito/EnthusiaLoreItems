@@ -14,6 +14,7 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
     private static final String CREATE_SUBCOMMAND = "create";
     private static final String ADOPT_SUBCOMMAND = "adopt";
     private static final String GIVE_SUBCOMMAND = "give";
+    private static final String COPY_SUBCOMMAND = "copy";
     private static final String RELOAD_SUBCOMMAND = "reload";
     private static final String SET_SUBCOMMAND = "set";
     private static final String ANOMALIES_SUBCOMMAND = "anomalies";
@@ -32,6 +33,11 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
     private final LoreItemsAdministrationCommandExecutor administrationExecutor;
     private final LoreItemsDestructiveCommandExecutor destructiveExecutor;
     private final FoundationConfigurationReloadCommandExecutor reloadExecutor;
+    private PaperCreativeCopyController creativeCopyController;
+
+    public void setCreativeCopyController(PaperCreativeCopyController controller) {
+        this.creativeCopyController = Objects.requireNonNull(controller, "controller");
+    }
 
     public LoreItemsCommandExecutor(
             CreateDefinitionCommandExecutor createExecutor,
@@ -122,6 +128,7 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
             case CREATE_SUBCOMMAND -> createExecutor.onCommand(sender, command, label, arguments);
             case ADOPT_SUBCOMMAND -> adoptExecutor.onCommand(sender, command, label, arguments);
             case GIVE_SUBCOMMAND -> giveExecutor.onCommand(sender, command, label, arguments);
+            case COPY_SUBCOMMAND -> executeCopy(sender, arguments);
             case RELOAD_SUBCOMMAND -> executeReload(sender, arguments);
             case EDITOR_SUBCOMMAND, SET_SUBCOMMAND -> executeEditor(sender, arguments);
             case BROWSE_SUBCOMMAND, ANOMALIES_SUBCOMMAND, AUDIT_SUBCOMMAND,
@@ -187,6 +194,7 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
         addIfAllowed(candidates, sender, CREATE_SUBCOMMAND, "enthusia.loreitems.admin.create");
         addIfAllowed(candidates, sender, ADOPT_SUBCOMMAND, "enthusia.loreitems.admin.adopt");
         addIfAllowed(candidates, sender, GIVE_SUBCOMMAND, "enthusia.loreitems.admin.give");
+        addIfAllowed(candidates, sender, COPY_SUBCOMMAND, "enthusia.loreitems.admin.give");
         if (administrationAvailable) {
             addIfAllowed(candidates, sender, SET_SUBCOMMAND, PaperTemplateEditorManager.EDIT_PERMISSION);
             addIfAllowed(candidates, sender, EDITOR_SUBCOMMAND, PaperTemplateEditorManager.EDIT_PERMISSION);
@@ -232,6 +240,14 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
         if (sender.hasPermission(permission)) {
             values.add(value);
         }
+    }
+
+    private boolean executeCopy(CommandSender sender, String[] arguments) {
+        if (creativeCopyController == null) {
+            sender.sendMessage("Creative item copies are unavailable.");
+            return true;
+        }
+        return creativeCopyController.execute(sender, arguments);
     }
 
     private boolean executeReload(CommandSender sender, String[] arguments) {

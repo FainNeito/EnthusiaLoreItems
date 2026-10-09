@@ -85,6 +85,10 @@ public final class PaperTrackingAdministrationGui implements Listener {
         if (player == null || slot < 0 || slot >= topSize) {
             return;
         }
+        if (event.isShiftClick()) {
+            PaperTrackingTechnicalDetails.show(plugin, player, view, slot);
+            return;
+        }
         if (view.screen == PaperTrackingAdministrationView.Screen.INSTANCES
                 && slot < view.instanceIds.size()
                 && !event.isLeftClick()) {
@@ -249,6 +253,11 @@ public final class PaperTrackingAdministrationGui implements Listener {
     private void clickEvidence(
             Player player, PaperTrackingAdministrationView view, int slot) {
         UUID playerId = player.getUniqueId();
+        if (slot == PaperTrackingAdministrationItems.CURRENT_LOCATION) {
+            openEvidence(playerId, view.definitionId, view.definitionPageNumber,
+                    view.parentPageNumber, view.instanceId, view.pageNumber);
+            return;
+        }
         if (slot == BACK) {
             openInstances(
                     playerId,
@@ -282,35 +291,15 @@ public final class PaperTrackingAdministrationGui implements Listener {
         }
         ObservationChoice selected = view.observations.get(slot);
         if (selectable(selected, view.duplicate)) {
-            showConfirmation(
-                    player,
-                    view.definitionId,
-                    view.definitionPageNumber,
-                    view.parentPageNumber,
-                    view.instanceId,
-                    view.duplicate,
-                    selected,
-                    view.pageNumber);
+            showConfirmation(player, view, selected);
         }
     }
 
     private void showConfirmation(
-            Player player,
-            LoreDefinitionId definitionId,
-            int definitionPageNumber,
-            int instancePageNumber,
-            LoreInstanceId instanceId,
-            DuplicateChoice duplicate,
-            ObservationChoice observation,
-            int returnPage) {
+            Player player, PaperTrackingAdministrationView view, ObservationChoice observation) {
         Inventory inventory = renderer.confirmationInventory(
-                definitionId,
-                definitionPageNumber,
-                instancePageNumber,
-                instanceId,
-                duplicate,
-                observation,
-                returnPage);
+                view.definitionId, view.definitionPageNumber, view.parentPageNumber,
+                view.instanceId, view.duplicate, observation, view.pageNumber);
         openLater(player.getUniqueId(), inventory);
     }
 

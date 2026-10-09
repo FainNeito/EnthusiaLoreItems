@@ -1,10 +1,14 @@
 package net.enthusia.loreitems.sqlite;
 
+import static net.enthusia.loreitems.sqlite.SQLiteTrackingAnomalyQueries.hasActiveConflictEvidence;
+import static net.enthusia.loreitems.sqlite.SQLiteTrackingAnomalyQueries.hasNonDuplicateBlockingAnomaly;
+
 import static net.enthusia.loreitems.sqlite.SQLiteTrackingConflictSupport.appendAudit;
 import static net.enthusia.loreitems.sqlite.SQLiteTrackingConflictSupport.conflictLocation;
 import static net.enthusia.loreitems.sqlite.SQLiteTrackingConflictSupport.refreshDuplicateAnomaly;
 import static net.enthusia.loreitems.sqlite.SQLiteTrackingConflictSupport.samePhysicalEntity;
 import static net.enthusia.loreitems.sqlite.SQLiteTrackingConflictSupport.setNullableString;
+import static net.enthusia.loreitems.sqlite.SQLiteTrackingSlotMoves.sameHolder;
 import static net.enthusia.loreitems.sqlite.SQLiteTrackingConflictSupport.upsertDuplicateAnomaly;
 import static net.enthusia.loreitems.sqlite.SQLiteTrackingIdentityMismatchSupport.recordIdentityMismatchEvidence;
 
@@ -159,11 +163,19 @@ public final class SQLiteTrackingObservationStore implements TrackingObservation
         if (CONFLICTING.equals(current.state())) {
             return appendConflictEvidence(connection, request, observedAt);
         }
-        if (request.location().equals(current.location())) {
+        if (request.location().equals(current.location())
+                || (request.mode() == TrackingObservationUseCase.EvidenceMode.AUTHORITATIVE_TRANSITION
+                        && sameHolder(request.location(), current.location()))) {
             if (CONFIRMED_NOW.equals(current.state())) {
+                if (!request.location().equals(current.location())) {
+                    if (!SQLiteTrackingSlotMoves.updateSlot(
+                            connection, request, current.stateRevision(), observedAt)) {
+                        throw new StaleTrackingObservationException();
+                    }
+                }
                 return result(
                         TrackingObservationUseCase.Status.UNCHANGED,
-                        "The location is already confirmed now.");
+                        "The item remains inside the same inventory.");
             }
             return advance(
                     connection,
@@ -198,13 +210,15 @@ public final class SQLiteTrackingObservationStore implements TrackingObservation
                     "Conflicting state was preserved while the location became inaccessible.");
         }
         if (!request.location().equals(current.location())
+                && !sameHolder(request.location(), current.location())
                 && !samePhysicalEntity(request.location(), current.location())) {
             return result(
                     TrackingObservationUseCase.Status.STALE,
                     "Last-confirmed evidence no longer matches the durable current location.");
         }
         if (LAST_CONFIRMED.equals(current.state())
-                && request.location().equals(current.location())) {
+                && (request.location().equals(current.location())
+                        || sameHolder(request.location(), current.location()))) {
             return result(
                     TrackingObservationUseCase.Status.UNCHANGED,
                     "The location is already retained as last confirmed.");
@@ -375,48 +389,6 @@ public final class SQLiteTrackingObservationStore implements TrackingObservation
                         resultSet.getString("state"),
                         location,
                         resultSet.getLong("state_revision"));
-            }
-        }
-    }
-
-    private static boolean hasNonDuplicateBlockingAnomaly(
-            Connection connection,
-            TrackingObservationUseCase.Request request) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT 1 FROM instance_anomalies WHERE instance_id = ? "
-                        + "AND status IN ('OPEN', 'ACKNOWLEDGED') "
-                        + "AND anomaly_type <> 'DUPLICATE_INSTANCE' LIMIT 1")) {
-            statement.setString(1, request.identity().instanceId().value().toString());
-            try (ResultSet resultSet = statement.executeQuery()) {
-                return resultSet.next();
-            }
-        }
-    }
-
-    private static boolean hasActiveConflictEvidence(
-            Connection connection,
-            TrackingObservationUseCase.Request request) throws SQLException {
-        LocationDescriptor location = request.location();
-        try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT 1 FROM instance_observations observation "
-                        + "JOIN instance_anomalies anomaly "
-                        + "ON anomaly.instance_id = observation.instance_id "
-                        + "WHERE observation.instance_id = ? "
-                        + "AND observation.location_type = ? "
-                        + "AND observation.location_key = ? "
-                        + "AND ((observation.container_path IS NULL AND ? IS NULL) "
-                        + "OR observation.container_path = ?) "
-                        + "AND observation.confidence = 'CONFLICTING' "
-                        + "AND anomaly.anomaly_type = 'DUPLICATE_INSTANCE' "
-                        + "AND anomaly.status IN ('OPEN', 'ACKNOWLEDGED') "
-                        + "AND observation.observed_at >= anomaly.first_seen_at LIMIT 1")) {
-            statement.setString(1, request.identity().instanceId().value().toString());
-            statement.setString(2, location.type().name());
-            statement.setString(3, location.locationKey());
-            setNullableString(statement, 4, location.containerPath());
-            setNullableString(statement, 5, location.containerPath());
-            try (ResultSet resultSet = statement.executeQuery()) {
-                return resultSet.next();
             }
         }
     }

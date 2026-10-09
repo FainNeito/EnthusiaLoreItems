@@ -86,8 +86,8 @@ class SQLiteTrackingObservationStoreTest {
     }
 
     @Test
-    void conservativeDifferentPathFencesDuplicateWithoutDeletingEitherCopy() {
-        SQLiteStorageRuntime runtime = start(temporaryDirectory.resolve("duplicate.db"));
+    void movingSlotsInSameInventoryKeepsOneLocationHistoryEntry() {
+        SQLiteStorageRuntime runtime = start(temporaryDirectory.resolve("slot-moves.db"));
         try {
             seedActiveInstance(runtime);
             SQLiteTrackingObservationStore store = new SQLiteTrackingObservationStore(runtime);
@@ -96,8 +96,48 @@ class SQLiteTrackingObservationStoreTest {
                     TrackingObservationUseCase.Status.RECORDED,
                     record(store, present(SLOT_ONE, reconciliation()), 1_000L).status());
             assertEquals(
+                    TrackingObservationUseCase.Status.UNCHANGED,
+                    record(store, present(SLOT_TWO, authoritative()), 1_100L).status());
+
+            InstanceCurrentState current = currentState(runtime);
+            assertEquals(InstanceCurrentState.State.CONFIRMED_NOW, current.state());
+            assertEquals(SLOT_TWO, current.location());
+            var observations = new SQLiteObservationRepository(runtime)
+                    .listByInstance(INSTANCE_ID, PageRequest.first(20))
+                    .toCompletableFuture().join().items();
+            assertEquals(1, observations.size());
+            assertTrue(new SQLiteAnomalyRepository(runtime)
+                    .listByInstance(INSTANCE_ID, PageRequest.first(10))
+                    .toCompletableFuture().join().items().isEmpty());
+
+            assertEquals(
+                    TrackingObservationUseCase.Status.RECORDED,
+                    record(store, present(DROPPED, authoritative()), 1_200L).status());
+            assertEquals(2, new SQLiteObservationRepository(runtime)
+                    .listByInstance(INSTANCE_ID, PageRequest.first(20))
+                    .toCompletableFuture().join().items().size());
+        } finally {
+            runtime.close(Duration.ofSeconds(5));
+        }
+    }
+
+    @Test
+    void differentOwnerStillFencesDuplicateWithoutDeletingEitherCopy() {
+        SQLiteStorageRuntime runtime = start(temporaryDirectory.resolve("duplicate.db"));
+        try {
+            seedActiveInstance(runtime);
+            SQLiteTrackingObservationStore store = new SQLiteTrackingObservationStore(runtime);
+            LocationDescriptor otherPlayer = new LocationDescriptor(
+                    LocationDescriptor.Type.PLAYER_INVENTORY,
+                    "player:55555555-5555-5555-5555-555555555555",
+                    "slot:2");
+
+            assertEquals(
+                    TrackingObservationUseCase.Status.RECORDED,
+                    record(store, present(SLOT_ONE, reconciliation()), 1_000L).status());
+            assertEquals(
                     TrackingObservationUseCase.Status.CONFLICT_RECORDED,
-                    record(store, present(SLOT_TWO, reconciliation()), 1_100L).status());
+                    record(store, present(otherPlayer, reconciliation()), 1_100L).status());
 
             InstanceCurrentState current = currentState(runtime);
             assertEquals(InstanceCurrentState.State.CONFLICTING, current.state());
@@ -105,24 +145,44 @@ class SQLiteTrackingObservationStoreTest {
             assertEquals(LoreInstanceLifecycle.ACTIVE, new SQLiteInstanceRepository(runtime)
                     .findById(INSTANCE_ID).toCompletableFuture().join().orElseThrow().lifecycle());
 
-            var observations = new SQLiteObservationRepository(runtime)
-                    .listByInstance(INSTANCE_ID, PageRequest.first(20))
-                    .toCompletableFuture().join().items();
-            assertTrue(observations.stream().anyMatch(observation ->
-                    SLOT_ONE.equals(observation.location())
-                            && observation.confidence()
-                                    == InstanceObservation.Confidence.CONFLICTING));
-            assertTrue(observations.stream().anyMatch(observation ->
-                    SLOT_TWO.equals(observation.location())
-                            && observation.confidence()
-                                    == InstanceObservation.Confidence.CONFLICTING));
-
             var anomalies = new SQLiteAnomalyRepository(runtime)
                     .listByInstance(INSTANCE_ID, PageRequest.first(10))
                     .toCompletableFuture().join().items();
             assertEquals(1, anomalies.size());
             assertEquals(InstanceAnomaly.Type.DUPLICATE_INSTANCE, anomalies.getFirst().type());
             assertEquals(InstanceAnomaly.Status.OPEN, anomalies.getFirst().status());
+        } finally {
+            runtime.close(Duration.ofSeconds(5));
+        }
+    }
+
+    @Test
+    void creativeDisappearanceMarksUnresolvedWithoutDestroyingIdentity() {
+        SQLiteStorageRuntime runtime = start(temporaryDirectory.resolve("creative-missing.db"));
+        try {
+            seedActiveInstance(runtime);
+            SQLiteTrackingObservationStore tracking = new SQLiteTrackingObservationStore(runtime);
+            record(tracking, present(SLOT_ONE, reconciliation()), 1_000L);
+
+            SQLiteCreativeInventoryLossStore losses = new SQLiteCreativeInventoryLossStore(
+                    runtime, java.time.Clock.fixed(
+                            Instant.ofEpochMilli(1_100L), java.time.ZoneOffset.UTC));
+            UUID owner = UUID.fromString("33333333-3333-3333-3333-333333333333");
+            assertTrue(losses.record(owner, IDENTITY).toCompletableFuture().join());
+            assertEquals(InstanceCurrentState.State.MISSING_UNRESOLVED, currentState(runtime).state());
+            assertEquals(LoreInstanceLifecycle.ACTIVE,
+                    new SQLiteInstanceRepository(runtime).findById(INSTANCE_ID)
+                            .toCompletableFuture().join().orElseThrow().lifecycle());
+            assertTrue(new SQLiteObservationRepository(runtime)
+                    .listByInstance(INSTANCE_ID, PageRequest.first(20))
+                    .toCompletableFuture().join().items().size() == 1);
+
+            // Once another physical location is confirmed, the missing flag clears.
+            assertEquals(TrackingObservationUseCase.Status.RECORDED,
+                    record(tracking, present(DROPPED, authoritative()), 1_200L).status());
+            assertEquals(InstanceCurrentState.State.CONFIRMED_NOW, currentState(runtime).state());
+            assertEquals(DROPPED, currentState(runtime).location());
+            assertTrue(!losses.record(owner, IDENTITY).toCompletableFuture().join());
         } finally {
             runtime.close(Duration.ofSeconds(5));
         }

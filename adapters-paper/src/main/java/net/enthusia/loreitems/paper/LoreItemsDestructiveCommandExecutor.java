@@ -155,7 +155,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
     private boolean previewExactRemoval(CommandSender sender, String[] arguments) {
         if (!DestructiveCommandSupport.requirePermission(sender, REMOVE_PERMISSION)
                 || arguments.length != 3) {
-            LoreItemsMessages.send(sender, 
+            LoreItemsMessages.send(sender,
                     "Usage: /loreitems remove <definition-uuid> <instance-uuid>");
             return true;
         }
@@ -241,7 +241,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         Optional<DestructiveConfirmationRegistry.Session> session = confirmations.consume(
                 DestructiveCommandSupport.actorId(sender), operationType, arguments[1]);
         if (session.isEmpty()) {
-            LoreItemsMessages.send(sender, 
+            LoreItemsMessages.send(sender,
                     "No matching unexpired confirmation exists. Run the destructive preview again.");
             return true;
         }

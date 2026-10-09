@@ -110,7 +110,7 @@ public final class GiveLoreItemCommandExecutor implements CommandExecutor {
             if (cached != null) {
                 return cached.getUniqueId();
             }
-            LoreItemsMessages.send(sender, 
+            LoreItemsMessages.send(sender,
                     "That player is not online or cached. Use the player's UUID to queue offline delivery.");
             return null;
         }

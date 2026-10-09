@@ -17,6 +17,7 @@ import org.bukkit.plugin.Plugin;
 /** Shared rendering primitives for the tracking administration inventories. */
 final class PaperTrackingAdministrationItems {
     static final int BACK = 45;
+    static final int CURRENT_LOCATION = 46;
     static final int PREVIOUS = 48;
     static final int STATUS = 49;
     static final int NEXT = 50;
@@ -51,9 +52,17 @@ final class PaperTrackingAdministrationItems {
                 STATUS,
                 item(
                         Material.CLOCK,
-                        "Tracking status",
-                        PaperGuiStyle.Tone.METADATA,
+                        "Location & tracking help",
+                        PaperGuiStyle.Tone.PRIMARY,
                         statusLore));
+        for (int slot = BACK; slot < inventory.getSize() && slot < 54; slot++) {
+            if (inventory.getItem(slot) == null) {
+                inventory.setItem(slot, item(
+                        slot % 2 == 0 ? Material.CYAN_STAINED_GLASS_PANE
+                                : Material.PURPLE_STAINED_GLASS_PANE,
+                        " ", PaperGuiStyle.Tone.NAVIGATION, List.of()));
+            }
+        }
     }
 
     static void decorateNested(
@@ -73,22 +82,37 @@ final class PaperTrackingAdministrationItems {
         decorate(inventory, pageNumber, hasMore, statusLore);
     }
 
-    static ItemStack evidenceItem(ObservationChoice choice, DuplicateChoice duplicate) {
+    static ItemStack evidenceItem(
+            PaperFriendlyLocation location, ObservationChoice choice, DuplicateChoice duplicate) {
+        String place = location.describe(choice.location());
+        boolean conflicting = choice.confidence() == InstanceObservation.Confidence.CONFLICTING;
         List<String> lore = new ArrayList<>();
-        lore.add(describe(choice.location()));
-        lore.add("Confidence: " + humanize(choice.confidence().name()));
-        lore.add("Source: " + choice.source());
+        lore.add("Location: " + place);
+        lore.add("When: " + formatTime(choice.observedAt()));
+        if (conflicting) {
+            lore.add("Warning: Another copy may exist");
+        } else if (choice.confidence() == InstanceObservation.Confidence.LAST_CONFIRMED) {
+            lore.add("Status: Last known location");
+        }
         if (selectable(choice, duplicate)) {
             lore.add("");
-            lore.add("Click to select this location.");
-            lore.add("You will review it before anything changes.");
+            lore.add("Click to review this location.");
         }
-        boolean conflicting =
-                choice.confidence() == InstanceObservation.Confidence.CONFLICTING;
+        lore.add("Shift-click for technical details.");
         Material material = conflicting ? Material.REDSTONE : Material.COMPASS;
-        PaperGuiStyle.Tone tone =
-                conflicting ? PaperGuiStyle.Tone.WARNING : PaperGuiStyle.Tone.INFO;
-        return item(material, "Observation " + choice.observationId(), tone, lore);
+        PaperGuiStyle.Tone tone = conflicting
+                ? PaperGuiStyle.Tone.WARNING : PaperGuiStyle.Tone.PRIMARY;
+        return item(material, compact("Visited: " + place), tone, lore);
+    }
+
+    static String formatTime(long epochMillis) {
+        return java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(java.time.Instant.ofEpochMilli(epochMillis));
+    }
+
+    private static String compact(String text) {
+        return text.length() <= 52 ? text : text.substring(0, 49) + "...";
     }
 
     static List<String> trackingMetricsLore(Plugin plugin) {
@@ -143,14 +167,9 @@ final class PaperTrackingAdministrationItems {
                 };
     }
 
+    /** Detailed raw evidence is for staff troubleshooting only, never default lore. */
     static String describe(LocationDescriptor location) {
-        StringBuilder description = new StringBuilder(humanize(location.type().name()))
-                .append(": ")
-                .append(location.locationKey());
-        if (location.containerPath() != null) {
-            description.append(" • ").append(location.containerPath());
-        }
-        return description.toString();
+        return humanize(location.type().name()) + ": " + location.locationKey();
     }
 
     static String shortId(java.util.UUID id) {

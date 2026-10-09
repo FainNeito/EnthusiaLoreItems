@@ -59,15 +59,13 @@ final class PaperTemplateEditorRenderer {
                 snapshot.definition().displayName(),
                 PaperGuiStyle.Tone.METADATA,
                 List.of(
-                        "Key: " + snapshot.definition().key().value(),
-                        "Current revision: " + snapshot.definition().currentRevision().value(),
-                        "Active instances: " + snapshot.activeInstanceCount(),
-                        "Open anomalies: " + snapshot.anomalyCount(),
+                        "Status: Active collection",
+                        "Tracked copies: " + snapshot.activeInstanceCount(),
+                        "Open issues: " + snapshot.anomalyCount(),
                         "Pending updates: " + snapshot.pendingUpdateCount(),
-                        "Rollout: " + (snapshot.rolloutActive() ? "Active" : "Idle"),
+                        "Updates: " + (snapshot.rolloutActive() ? "In progress" : "Up to date"),
                         "",
-                        "Template codec: v" + snapshot.currentTemplate().codecVersion(),
-                        "Template data: " + snapshot.currentTemplate().payload().length + " bytes")));
+                        "Use edit or browse to manage this collection.")));
     }
 
     private static void populateManagementActions(Player player, Inventory inventory) {

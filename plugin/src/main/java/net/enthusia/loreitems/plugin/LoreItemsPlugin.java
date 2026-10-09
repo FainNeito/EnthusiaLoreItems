@@ -80,6 +80,8 @@ public final class LoreItemsPlugin extends JavaPlugin {
             new AtomicReference<>(UnavailableLoreItemsUseCases.displayObservation());
     private final LoreItemsServiceV1 registeredService =
             LoreItemsServiceDelegates.delegating(serviceDelegate);
+    private final LoreItemsCreativeSupport creativeSupport =
+            new LoreItemsCreativeSupport(this, registeredService, this::wakeDirectDeliveries);
     private final CreateDefinitionUseCase registeredCreateDefinitionUseCase =
             request -> createDefinitionDelegate.get().create(request);
     private final Object lifecycleLock = new Object();
@@ -183,17 +185,11 @@ public final class LoreItemsPlugin extends JavaPlugin {
         PluginCommand command = Objects.requireNonNull(
                 getCommand("loreitems"), "plugin.yml must declare the loreitems command");
         CreateDefinitionCommandExecutor createExecutor = new CreateDefinitionCommandExecutor(
-                this,
-                registeredCreateDefinitionUseCase,
-                new PaperHeldItemDefinitionSnapshotter());
+                this, registeredCreateDefinitionUseCase, new PaperHeldItemDefinitionSnapshotter());
         AdoptHeldItemCommandExecutor adoptExecutor = new AdoptHeldItemCommandExecutor(
-                this,
-                adoptHeldItemDelegate::get,
-                new PaperHeldItemAdoptionOperator());
+                this, adoptHeldItemDelegate::get, new PaperHeldItemAdoptionOperator());
         GiveLoreItemCommandExecutor giveExecutor = new GiveLoreItemCommandExecutor(
-                this,
-                registeredService,
-                this::wakeDirectDeliveries);
+                this, registeredService, this::wakeDirectDeliveries);
         LoreItemsAdministrationCommandExecutor administrationExecutor =
                 new LoreItemsAdministrationCommandExecutor(
                         this,
@@ -210,6 +206,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
                 giveExecutor,
                 administrationExecutor,
                 reloadExecutor);
+        creativeSupport.install(executor);
         command.setExecutor(executor);
         command.setTabCompleter(executor);
     }
@@ -224,6 +221,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
                     () -> configuration.get().current().mutationBudgetPerTick(),
                     () -> startupConfigurationGate.sharedContainersAllowed(
                             configuration.get().current()));
+            creativeSupport.install(protection);
             display = new PaperDisplayItemListener(
                     this,
                     displayObservationDelegate::get,
@@ -255,6 +253,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
             shutdownCleanupComplete = false;
             setUnavailableDelegates("The plugin is stopping.");
         }
+        creativeSupport.clear();
         CompletionStage<Void> trackingQuiescence = PaperTrackingCoordinator.quiescenceFor(this);
         shutdownTrackingQuiescence = trackingQuiescence;
         closeQuietly(uniqueAccessTrackingListener, "unique-access tracking listener");
@@ -417,6 +416,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
                 writable.displayObservation())) {
             return;
         }
+        creativeSupport.activate(runtime);
         if (!StartupActivationSequence.run(
                 () -> activateTrackingListeners(writable.trackingObservation(), runtime.metrics()),
                 () -> activateDirectDeliveryWorker(writable.directDelivery(), loaded),

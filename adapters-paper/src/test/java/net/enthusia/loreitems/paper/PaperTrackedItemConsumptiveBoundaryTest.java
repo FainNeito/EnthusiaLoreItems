@@ -122,7 +122,7 @@ class PaperTrackedItemConsumptiveBoundaryTest {
 
     @Test
     void edibleTrackedItemsAreTreatedAsConsumptiveBlockInteractions() throws Exception {
-        Method method = PaperTrackedItemProtectionListener.class.getDeclaredMethod(
+        Method method = PaperTrackedItemInteractionRules.class.getDeclaredMethod(
                 "losesIdentityOnInteraction", Material.class);
         assertTrue(method.trySetAccessible());
 

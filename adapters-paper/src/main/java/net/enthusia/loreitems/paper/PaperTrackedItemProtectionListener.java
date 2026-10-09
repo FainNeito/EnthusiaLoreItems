@@ -1,5 +1,8 @@
 package net.enthusia.loreitems.paper;
 
+import static net.enthusia.loreitems.paper.PaperTrackedItemInteractionRules.losesIdentityOnInteraction;
+import static net.enthusia.loreitems.paper.PaperTrackedItemInteractionRules.losesIdentityOnEntityInteraction;
+
 import com.destroystokyo.paper.event.player.PlayerElytraBoostEvent;
 import com.destroystokyo.paper.event.player.PlayerLaunchProjectileEvent;
 import com.destroystokyo.paper.event.player.PlayerReadyArrowEvent;
@@ -11,11 +14,13 @@ import io.papermc.paper.event.player.PlayerFlowerPotManipulateEvent;
 import io.papermc.paper.event.player.PlayerPickBlockEvent;
 import io.papermc.paper.event.player.PlayerPickEntityEvent;
 import java.util.Objects;
-import java.util.Set;
+import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.enthusia.loreitems.application.ItemIdentityReadResult;
+import net.enthusia.loreitems.application.LoreItemIdentity;
 import net.enthusia.loreitems.application.VoidLossUseCase;
 import org.bukkit.Material;
 import org.bukkit.block.Crafter;
@@ -62,40 +67,12 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 
 public final class PaperTrackedItemProtectionListener implements Listener, AutoCloseable {
-    private static final Set<String> CONSUMPTIVE_INTERACTION_MATERIALS = Set.of(
-            "BONE_MEAL",
-            "BOWL",
-            "ENDER_EYE",
-            "FIRE_CHARGE",
-            "GLASS_BOTTLE",
-            "GLOW_INK_SAC",
-            "HONEYCOMB",
-            "INK_SAC",
-            "MAP",
-            "OMINOUS_TRIAL_KEY",
-            "RESIN_CLUMP",
-            "TRIAL_KEY");
-    private static final Set<String> CONSUMPTIVE_ENTITY_MATERIALS = Set.of(
-            "AMETHYST_SHARD",
-            "BAMBOO",
-            "BROWN_MUSHROOM",
-            "CHEST",
-            "DANDELION",
-            "HAY_BLOCK",
-            "LEAD",
-            "NAME_TAG",
-            "POPPY",
-            "RED_MUSHROOM",
-            "SADDLE",
-            "SEAGRASS",
-            "SLIME_BALL",
-            "WHEAT",
-            "WOLF_ARMOR");
-
     private final Plugin plugin;
     private final PaperItemIdentityCodec identityCodec;
     private final PaperTrackedItemCollector itemCollector = new PaperTrackedItemCollector();
     private final PaperCreativeIdentityProtection creativeIdentityProtection;
+    private PaperCreativeCopyController creativeCopyController;
+    private BiConsumer<UUID, LoreItemIdentity> creativeLossObserver;
     private final PaperVoidLossCoordinator voidLossCoordinator;
     private final BooleanSupplier sharedContainersAllowedSupplier;
 
@@ -145,6 +122,14 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
             throw new IllegalStateException("Protection listener is closed");
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+    }
+
+    public void setCreativeCopyController(PaperCreativeCopyController controller) {
+        this.creativeCopyController = Objects.requireNonNull(controller, "controller");
+    }
+
+    public void setCreativeLossObserver(BiConsumer<UUID, LoreItemIdentity> observer) {
+        this.creativeLossObserver = Objects.requireNonNull(observer, "observer");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -238,14 +223,17 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
     public void onCreativeClone(InventoryClickEvent event) {
         if (creativeIdentityProtection.shouldCancelClone(event)) {
             event.setCancelled(true);
+            if (creativeCopyController != null && event.getWhoClicked() instanceof Player player) {
+                creativeCopyController.request(player, event.getCurrentItem());
+            }
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCreativeInventoryMutation(InventoryCreativeEvent event) {
-        if (creativeIdentityProtection.shouldCancelInventoryMutation(event)) {
-            event.setCancelled(true);
-        }
+        PaperCreativeInventoryMutationSupport.handle(
+                plugin, event, creativeIdentityProtection, identityCodec,
+                creativeCopyController, creativeLossObserver);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -516,27 +504,10 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
         return itemCollector.hasIdentityEvidence(item);
     }
 
-    private static boolean losesIdentityOnInteraction(Material material) {
-        String name = material.name();
-        return material.isEdible()
-                || CONSUMPTIVE_INTERACTION_MATERIALS.contains(name)
-                || name.endsWith("_DYE")
-                || name.endsWith("_SPAWN_EGG");
-    }
-
-    private static boolean losesIdentityOnEntityInteraction(Material material) {
-        String name = material.name();
-        return losesIdentityOnInteraction(material)
-                || material.isEdible()
-                || CONSUMPTIVE_ENTITY_MATERIALS.contains(name)
-                || name.endsWith("_CARPET")
-                || name.endsWith("_HORSE_ARMOR")
-                || name.endsWith("_SEEDS");
-    }
-
     @Override
     public void close() {
         closed = true;
+        creativeIdentityProtection.clear();
         voidLossCoordinator.close();
         HandlerList.unregisterAll(this);
     }

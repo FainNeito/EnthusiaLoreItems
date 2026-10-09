@@ -165,13 +165,13 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
             Player player, DefinitionKey key, CreateDefinitionResult result) {
         CreateDefinitionStatus status = result.status();
         switch (status) {
-            case CREATED -> LoreItemsMessages.send(player, 
+            case CREATED -> LoreItemsMessages.send(player,
                     "Created lore definition '" + key.value() + "' from the held item.");
-            case ACTIVE_KEY_EXISTS -> LoreItemsMessages.send(player, 
+            case ACTIVE_KEY_EXISTS -> LoreItemsMessages.send(player,
                     "An active lore definition already uses key '" + key.value() + "'.");
-            case SERVICE_UNAVAILABLE -> LoreItemsMessages.send(player, 
+            case SERVICE_UNAVAILABLE -> LoreItemsMessages.send(player,
                     "Lore item storage is not currently available for writes.");
-            default -> LoreItemsMessages.send(player, 
+            default -> LoreItemsMessages.send(player,
                     "Lore definition creation returned an unsupported durable state.");
         }
     }
