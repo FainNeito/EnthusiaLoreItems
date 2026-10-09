@@ -50,7 +50,7 @@ public final class GiveLoreItemCommandExecutor implements CommandExecutor {
         Objects.requireNonNull(label, "label");
         Objects.requireNonNull(arguments, "arguments");
         if (arguments.length == 0 || !GIVE_SUBCOMMAND.equalsIgnoreCase(arguments[0])) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return true;
         }
         executeGive(sender, arguments);
@@ -59,12 +59,12 @@ public final class GiveLoreItemCommandExecutor implements CommandExecutor {
 
     private void executeGive(CommandSender sender, String[] arguments) {
         if (!sender.hasPermission(GIVE_PERMISSION)) {
-            sender.sendMessage("You do not have permission to give lore items.");
+            LoreItemsMessages.send(sender, "You do not have permission to give lore items.");
             return;
         }
         if (arguments.length < MINIMUM_ARGUMENT_COUNT
                 || arguments.length > MAXIMUM_ARGUMENT_COUNT) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return;
         }
         UUID targetPlayerId = resolveTarget(sender, arguments);
@@ -83,7 +83,7 @@ public final class GiveLoreItemCommandExecutor implements CommandExecutor {
                     Level.SEVERE,
                     "Direct-give command could not submit durable delivery work.",
                     exception);
-            sender.sendMessage("The lore-item delivery could not be submitted.");
+            LoreItemsMessages.send(sender, "The lore-item delivery could not be submitted.");
             return;
         }
         delivery.whenComplete((result, throwable) -> handleResult(
@@ -95,7 +95,7 @@ public final class GiveLoreItemCommandExecutor implements CommandExecutor {
             if (sender instanceof Player player) {
                 return player.getUniqueId();
             }
-            sender.sendMessage("Console must specify a cached player name or UUID.");
+            LoreItemsMessages.send(sender, "Console must specify a cached player name or UUID.");
             return null;
         }
         String value = arguments[2];
@@ -110,7 +110,7 @@ public final class GiveLoreItemCommandExecutor implements CommandExecutor {
             if (cached != null) {
                 return cached.getUniqueId();
             }
-            sender.sendMessage(
+            LoreItemsMessages.send(sender, 
                     "That player is not online or cached. Use the player's UUID to queue offline delivery.");
             return null;
         }
@@ -170,7 +170,7 @@ public final class GiveLoreItemCommandExecutor implements CommandExecutor {
                 }
                 Player player = plugin.getServer().getPlayer(actor.playerId());
                 if (player != null) {
-                    player.sendMessage(message);
+                    LoreItemsMessages.send(player, message);
                 }
             });
         } catch (IllegalPluginAccessException exception) {

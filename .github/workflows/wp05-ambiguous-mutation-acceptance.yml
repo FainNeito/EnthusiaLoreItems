@@ -88,7 +88,7 @@ jobs:
           const clickLabel=async label=>{const s=findSlot(label);log(`GUI_CLICK label=${label} slot=${s}`);await click(s)}
           async function makeRevision(){
             bot.chat('/loreitems browse');await waitWindow('Lore definitions');await click(0);await waitWindow('Template management');await clickLabel('Edit template');await waitWindow('Template editor')
-            await clickLabel('Custom name');await waitNoWindow();bot.chat('submit literal Review Revision Two');await waitWindow('Template editor');await clickLabel('Preview and confirm');await waitWindow('Confirm template revision');await clickLabel('Confirm revision');await waitWindow('Template management');log('REVISION_TWO_CONFIRMED')
+            await clickLabel('Custom name');await waitNoWindow();bot.chat('/loreitems set literal Review Revision Two');await waitWindow('Template editor');await clickLabel('Preview and confirm');await waitWindow('Confirm template revision');await clickLabel('Confirm revision');await waitWindow('Template management');log('REVISION_TWO_CONFIRMED')
           }
           bot.on('message',m=>log(`CHAT ${m.toString()}`));bot.on('error',e=>log(`ERROR ${e.stack||e}`));bot.on('kicked',r=>log(`KICKED ${String(r)}`))
           bot.once('spawn',async()=>{try{

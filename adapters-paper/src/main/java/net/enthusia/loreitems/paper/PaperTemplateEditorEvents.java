@@ -1,9 +1,6 @@
 package net.enthusia.loreitems.paper;
 
-import io.papermc.paper.event.player.AsyncChatEvent;
 import java.util.Objects;
-import java.util.UUID;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -42,18 +39,6 @@ final class PaperTemplateEditorEvents implements Listener {
         if (event.getRawSlots().stream().anyMatch(slot -> slot < topSize)) {
             event.setCancelled(true);
         }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onChat(AsyncChatEvent event) {
-        UUID playerId = event.getPlayer().getUniqueId();
-        UUID sessionId = manager.chatSessionId(playerId);
-        if (sessionId == null) {
-            return;
-        }
-        event.setCancelled(true);
-        String message = PlainTextComponentSerializer.plainText().serialize(event.message());
-        manager.receiveChatAsync(playerId, sessionId, message);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

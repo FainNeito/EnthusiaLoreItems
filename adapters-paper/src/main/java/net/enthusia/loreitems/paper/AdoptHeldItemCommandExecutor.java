@@ -57,7 +57,7 @@ public final class AdoptHeldItemCommandExecutor implements CommandExecutor {
         Objects.requireNonNull(arguments, "arguments");
         if (arguments.length == 0
                 || !ADOPT_SUBCOMMAND.equalsIgnoreCase(arguments[0])) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return true;
         }
         executeAdopt(sender, arguments);
@@ -66,15 +66,15 @@ public final class AdoptHeldItemCommandExecutor implements CommandExecutor {
 
     private void executeAdopt(CommandSender sender, String[] arguments) {
         if (!sender.hasPermission(ADOPT_PERMISSION)) {
-            sender.sendMessage("You do not have permission to adopt lore items.");
+            LoreItemsMessages.send(sender, "You do not have permission to adopt lore items.");
             return;
         }
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("This command requires a player holding the item to adopt.");
+            LoreItemsMessages.send(sender, "This command requires a player holding the item to adopt.");
             return;
         }
         if (arguments.length != REQUIRED_ARGUMENT_COUNT) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return;
         }
         submitAdoption(player, arguments[1]);
@@ -83,12 +83,12 @@ public final class AdoptHeldItemCommandExecutor implements CommandExecutor {
     private void submitAdoption(Player player, String keyValue) {
         UUID playerId = player.getUniqueId();
         if (!capacity.tryAcquire()) {
-            player.sendMessage("Too many lore-item mutations are already active; try again later.");
+            LoreItemsMessages.send(player, "Too many lore-item mutations are already active; try again later.");
             return;
         }
         if (!activePlayers.add(playerId)) {
             capacity.release();
-            player.sendMessage("Your previous lore-item adoption is still being resolved.");
+            LoreItemsMessages.send(player, "Your previous lore-item adoption is still being resolved.");
             return;
         }
         try {
@@ -102,13 +102,13 @@ public final class AdoptHeldItemCommandExecutor implements CommandExecutor {
                     handlePreparation(useCase, request, result, throwable));
         } catch (IllegalArgumentException | ItemCodecException exception) {
             release(playerId);
-            player.sendMessage(safeMessage(
+            LoreItemsMessages.send(player, safeMessage(
                     exception,
                     "The adoption request was invalid; the held item was not changed."));
         } catch (RuntimeException exception) {
             release(playerId);
             plugin.getLogger().log(Level.SEVERE, "Could not start held-item adoption.", exception);
-            player.sendMessage("Held-item adoption failed before durable preparation.");
+            LoreItemsMessages.send(player, "Held-item adoption failed before durable preparation.");
         }
     }
 
@@ -327,7 +327,7 @@ public final class AdoptHeldItemCommandExecutor implements CommandExecutor {
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 Player player = plugin.getServer().getPlayer(playerId);
                 if (player != null) {
-                    player.sendMessage(message);
+                    LoreItemsMessages.send(player, message);
                 }
             });
         } catch (IllegalPluginAccessException exception) {

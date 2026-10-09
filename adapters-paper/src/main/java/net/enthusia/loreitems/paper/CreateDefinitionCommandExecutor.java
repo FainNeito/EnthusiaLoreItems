@@ -54,7 +54,7 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
         Objects.requireNonNull(arguments, "arguments");
         if (arguments.length == 0
                 || !CREATE_SUBCOMMAND.equalsIgnoreCase(arguments[0])) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return true;
         }
         executeCreate(sender, arguments);
@@ -63,15 +63,15 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
 
     private void executeCreate(CommandSender sender, String[] arguments) {
         if (!sender.hasPermission(CREATE_PERMISSION)) {
-            sender.sendMessage("You do not have permission to create lore definitions.");
+            LoreItemsMessages.send(sender, "You do not have permission to create lore definitions.");
             return;
         }
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("This command requires a player holding the source item.");
+            LoreItemsMessages.send(sender, "This command requires a player holding the source item.");
             return;
         }
         if (arguments.length < MINIMUM_CREATE_ARGUMENTS) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return;
         }
         submitCreate(player, arguments);
@@ -95,7 +95,7 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
             creation.whenComplete((result, throwable) ->
                     scheduleResult(playerId, request.key(), result, throwable));
         } catch (IllegalArgumentException | ItemCodecException exception) {
-            player.sendMessage(safeMessage(
+            LoreItemsMessages.send(player, safeMessage(
                     exception,
                     "The definition request was invalid; nothing was created."));
         } catch (RuntimeException exception) {
@@ -107,7 +107,7 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
                             : "Could not submit definition creation for key "
                                     + attemptedKey.value(),
                     exception);
-            player.sendMessage("Lore definition creation could not be submitted.");
+            LoreItemsMessages.send(player, "Lore definition creation could not be submitted.");
         }
     }
 
@@ -137,7 +137,7 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
         if (throwable != null) {
             logFailure(key, throwable);
             if (player != null) {
-                player.sendMessage("Lore definition creation failed; check the server log.");
+                LoreItemsMessages.send(player, "Lore definition creation failed; check the server log.");
             }
             return;
         }
@@ -145,7 +145,7 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
             plugin.getLogger().severe(
                     "Definition creation returned no result for key " + key.value());
             if (player != null) {
-                player.sendMessage("Lore definition creation returned no durable result.");
+                LoreItemsMessages.send(player, "Lore definition creation returned no durable result.");
             }
             return;
         }
@@ -165,13 +165,13 @@ public final class CreateDefinitionCommandExecutor implements CommandExecutor {
             Player player, DefinitionKey key, CreateDefinitionResult result) {
         CreateDefinitionStatus status = result.status();
         switch (status) {
-            case CREATED -> player.sendMessage(
+            case CREATED -> LoreItemsMessages.send(player, 
                     "Created lore definition '" + key.value() + "' from the held item.");
-            case ACTIVE_KEY_EXISTS -> player.sendMessage(
+            case ACTIVE_KEY_EXISTS -> LoreItemsMessages.send(player, 
                     "An active lore definition already uses key '" + key.value() + "'.");
-            case SERVICE_UNAVAILABLE -> player.sendMessage(
+            case SERVICE_UNAVAILABLE -> LoreItemsMessages.send(player, 
                     "Lore item storage is not currently available for writes.");
-            default -> player.sendMessage(
+            default -> LoreItemsMessages.send(player, 
                     "Lore definition creation returned an unsupported durable state.");
         }
     }

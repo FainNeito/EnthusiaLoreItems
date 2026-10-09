@@ -34,12 +34,12 @@ final class DestructiveCommandSupport {
 
     static void showOperations(
             CommandSender sender, Page<DestructiveAdministrationUseCase.OperationView> page) {
-        sender.sendMessage("Destructive operations, page " + pageNumber(page) + ':');
+        LoreItemsMessages.send(sender, "Destructive operations, page " + pageNumber(page) + ':');
         if (page.items().isEmpty()) {
-            sender.sendMessage("No destructive operations are recorded on this page.");
+            LoreItemsMessages.send(sender, "No destructive operations are recorded on this page.");
         }
         long now = System.currentTimeMillis();
-        page.items().forEach(operation -> sender.sendMessage(formatOperation(operation, now)));
+        page.items().forEach(operation -> LoreItemsMessages.send(sender, formatOperation(operation, now)));
         showPageFooter(sender, page);
     }
 
@@ -47,18 +47,18 @@ final class DestructiveCommandSupport {
             CommandSender sender,
             UUID operationId,
             Page<DestructiveAdministrationUseCase.TargetView> page) {
-        sender.sendMessage("Targets for " + operationId + ", page " + pageNumber(page) + ':');
+        LoreItemsMessages.send(sender, "Targets for " + operationId + ", page " + pageNumber(page) + ':');
         if (page.items().isEmpty()) {
-            sender.sendMessage("No destructive targets are recorded on this page.");
+            LoreItemsMessages.send(sender, "No destructive targets are recorded on this page.");
         }
         long now = System.currentTimeMillis();
-        page.items().forEach(target -> sender.sendMessage(formatTarget(target, now)));
+        page.items().forEach(target -> LoreItemsMessages.send(sender, formatTarget(target, now)));
         showPageFooter(sender, page);
     }
 
     static void showMetrics(
             CommandSender sender, DestructiveAdministrationUseCase.Metrics metrics) {
-        sender.sendMessage("Destructive queue metrics: active=" + metrics.activeOperations()
+        LoreItemsMessages.send(sender, "Destructive queue metrics: active=" + metrics.activeOperations()
                 + ", paused=" + metrics.pausedOperations()
                 + ", queued-targets=" + metrics.queuedTargets()
                 + ", leases=" + metrics.activeLeases()
@@ -156,7 +156,7 @@ final class DestructiveCommandSupport {
         if (sender.hasPermission(permission)) {
             return true;
         }
-        sender.sendMessage("You do not have permission: " + permission);
+        LoreItemsMessages.send(sender, "You do not have permission: " + permission);
         return false;
     }
 
@@ -231,7 +231,7 @@ final class DestructiveCommandSupport {
     }
 
     private static void showPageFooter(CommandSender sender, Page<?> page) {
-        sender.sendMessage(page.hasMore()
+        LoreItemsMessages.send(sender, page.hasMore()
                 ? "More results are available on page " + (pageNumber(page) + FIRST_PAGE) + '.'
                 : "End of results.");
     }

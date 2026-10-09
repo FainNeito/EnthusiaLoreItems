@@ -56,14 +56,14 @@ final class DistributionCampaignCommandSupport {
     }
 
     static void showPreview(CommandSender sender, DistributionCampaignPreview preview) {
-        sender.sendMessage("Distribution preview — no delivery has started yet.");
-        sender.sendMessage("Campaign: " + preview.campaignId());
-        sender.sendMessage("Source: " + preview.groupFile().sourceName()
+        LoreItemsMessages.send(sender, "Distribution preview — no delivery has started yet.");
+        LoreItemsMessages.send(sender, "Campaign: " + preview.campaignId());
+        LoreItemsMessages.send(sender, "Source: " + preview.groupFile().sourceName()
                 + " (" + preview.groupFile().displayName() + ")");
-        sender.sendMessage("Recipients: " + preview.startRequest().recipients().size());
-        sender.sendMessage("Definition: " + preview.definition().key().value()
+        LoreItemsMessages.send(sender, "Recipients: " + preview.startRequest().recipients().size());
+        LoreItemsMessages.send(sender, "Definition: " + preview.definition().key().value()
                 + " revision " + preview.definition().currentRevision().value());
-        sender.sendMessage("Confirm explicitly with /loredistribution confirm " + preview.campaignId());
+        LoreItemsMessages.send(sender, "Confirm explicitly with /loredistribution confirm " + preview.campaignId());
     }
 
     static void showCatalogPage(
@@ -86,11 +86,11 @@ final class DistributionCampaignCommandSupport {
     static void showStatus(CommandSender sender, DistributionCampaignStatus status) {
         DistributionCampaign campaign = status.campaign();
         CampaignRecipientCounts counts = status.recipientCounts();
-        sender.sendMessage("Campaign " + campaign.campaignId() + LABEL_SEPARATOR + campaign.state());
-        sender.sendMessage("Source: " + campaign.sourceName() + LABEL_SEPARATOR + campaign.displayName());
-        sender.sendMessage("Definition: " + campaign.definitionId().value()
+        LoreItemsMessages.send(sender, "Campaign " + campaign.campaignId() + LABEL_SEPARATOR + campaign.state());
+        LoreItemsMessages.send(sender, "Source: " + campaign.sourceName() + LABEL_SEPARATOR + campaign.displayName());
+        LoreItemsMessages.send(sender, "Definition: " + campaign.definitionId().value()
                 + " revision " + campaign.definitionRevision().value());
-        sender.sendMessage("total=" + counts.total() + " remaining=" + counts.remaining()
+        LoreItemsMessages.send(sender, "total=" + counts.total() + " remaining=" + counts.remaining()
                 + " unresolved=" + counts.unresolved()
                 + " offline=" + counts.queuedOffline()
                 + " full=" + counts.queuedInventoryFull()
@@ -105,10 +105,10 @@ final class DistributionCampaignCommandSupport {
             Page<CampaignRecipient> page,
             CampaignRecipientState state,
             int pageNumber) {
-        sender.sendMessage("Campaign recipients "
+        LoreItemsMessages.send(sender, "Campaign recipients "
                 + (state == null ? "ALL" : state.name()) + " — page " + pageNumber);
         for (CampaignRecipient recipient : page.items()) {
-            sender.sendMessage("#" + recipient.snapshotIndex() + " " + recipient.originalValue()
+            LoreItemsMessages.send(sender, "#" + recipient.snapshotIndex() + " " + recipient.originalValue()
                     + " -> " + recipient.state()
                     + " player=" + value(recipient.playerId())
                     + " instance=" + value(recipient.instanceId()));
@@ -117,11 +117,11 @@ final class DistributionCampaignCommandSupport {
     }
 
     static void sendPageFooter(CommandSender sender, boolean hasMore) {
-        sender.sendMessage(hasMore ? "More results available." : "End of results.");
+        LoreItemsMessages.send(sender, hasMore ? "More results available." : "End of results.");
     }
 
     static void sendUsage(CommandSender sender, String label) {
-        sender.sendMessage("/" + label + " reload [page] | inspect <group.yml> | "
+        LoreItemsMessages.send(sender, "/" + label + " reload [page] | inspect <group.yml> | "
                 + "preview <group.yml> <definition-key> | confirm <campaign-uuid> | "
                 + "campaigns [page] | status <campaign-uuid> | "
                 + "recipients <campaign-uuid> [state|all] [page] | pause|resume|cancel <uuid> | "
@@ -154,15 +154,15 @@ final class DistributionCampaignCommandSupport {
             int pageSize) {
         int from = Math.multiplyExact(pageNumber - FIRST_PAGE, pageSize);
         if (from >= lines.size()) {
-            sender.sendMessage(title + " — page " + pageNumber + " is empty.");
+            LoreItemsMessages.send(sender, title + " — page " + pageNumber + " is empty.");
             return;
         }
         int to = Math.min(lines.size(), Math.addExact(from, pageSize));
-        sender.sendMessage(title + " — page " + pageNumber);
+        LoreItemsMessages.send(sender, title + " — page " + pageNumber);
         for (String line : lines.subList(from, to)) {
-            sender.sendMessage(line);
+            LoreItemsMessages.send(sender, line);
         }
-        sender.sendMessage(to < lines.size() ? "More results available." : "End of results.");
+        LoreItemsMessages.send(sender, to < lines.size() ? "More results available." : "End of results.");
     }
 
     private static Object value(Object value) {

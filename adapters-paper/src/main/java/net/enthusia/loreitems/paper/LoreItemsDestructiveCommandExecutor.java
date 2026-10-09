@@ -137,7 +137,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         Objects.requireNonNull(label, "label");
         Objects.requireNonNull(arguments, "arguments");
         if (closed || arguments.length == 0) {
-            sender.sendMessage("Destructive administration is unavailable.");
+            LoreItemsMessages.send(sender, "Destructive administration is unavailable.");
             return true;
         }
         CommandHandler handler = handlers.get(arguments[0].toLowerCase(Locale.ROOT));
@@ -147,7 +147,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         try {
             return handler.execute(sender, arguments);
         } catch (IllegalArgumentException exception) {
-            sender.sendMessage("Invalid destructive command: " + exception.getMessage());
+            LoreItemsMessages.send(sender, "Invalid destructive command: " + exception.getMessage());
             return true;
         }
     }
@@ -155,7 +155,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
     private boolean previewExactRemoval(CommandSender sender, String[] arguments) {
         if (!DestructiveCommandSupport.requirePermission(sender, REMOVE_PERMISSION)
                 || arguments.length != 3) {
-            sender.sendMessage(
+            LoreItemsMessages.send(sender, 
                     "Usage: /loreitems remove <definition-uuid> <instance-uuid>");
             return true;
         }
@@ -180,7 +180,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         String route = operationType == DestructiveOperationType.PURGE_DEFINITION ? PURGE : DELETE;
         if (!DestructiveCommandSupport.requirePermission(sender, permission)
                 || arguments.length != 2) {
-            sender.sendMessage("Usage: /loreitems " + route + " <definition-uuid>");
+            LoreItemsMessages.send(sender, "Usage: /loreitems " + route + " <definition-uuid>");
             return true;
         }
         LoreDefinitionId definitionId = new LoreDefinitionId(
@@ -195,20 +195,20 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
     private void showPreview(
             CommandSender sender, Optional<DestructiveAdministrationUseCase.Preview> result) {
         if (result.isEmpty()) {
-            sender.sendMessage("No matching active lore definition or instance was found.");
+            LoreItemsMessages.send(sender, "No matching active lore definition or instance was found.");
             return;
         }
         DestructiveAdministrationUseCase.Preview preview = result.orElseThrow();
         confirmations.remember(DestructiveCommandSupport.actorId(sender), preview);
-        sender.sendMessage("Destructive preview for " + preview.displayName()
+        LoreItemsMessages.send(sender, "Destructive preview for " + preview.displayName()
                 + " [" + preview.lookupKey().value() + "] at revision "
                 + preview.expectedRevision().value() + ':');
-        sender.sendMessage("targets=" + preview.targetCount()
+        LoreItemsMessages.send(sender, "targets=" + preview.targetCount()
                 + ", inaccessible=" + preview.inaccessibleCount()
                 + ", queued=" + preview.queuedCount()
                 + ", anomalies=" + preview.anomalyCount());
-        sender.sendMessage(effectWarning(preview.operationType()));
-        sender.sendMessage("This snapshot is fixed for five minutes. Confirm with: /loreitems "
+        LoreItemsMessages.send(sender, effectWarning(preview.operationType()));
+        LoreItemsMessages.send(sender, "This snapshot is fixed for five minutes. Confirm with: /loreitems "
                 + DestructiveCommandSupport.confirmationRoute(preview.operationType()) + ' '
                 + preview.confirmationToken());
     }
@@ -233,7 +233,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         if (!DestructiveCommandSupport.requirePermission(
                         sender, DestructiveCommandSupport.permissionFor(operationType))
                 || arguments.length != 2) {
-            sender.sendMessage("Usage: /loreitems "
+            LoreItemsMessages.send(sender, "Usage: /loreitems "
                     + DestructiveCommandSupport.confirmationRoute(operationType)
                     + " <confirmation-token>");
             return true;
@@ -241,7 +241,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         Optional<DestructiveConfirmationRegistry.Session> session = confirmations.consume(
                 DestructiveCommandSupport.actorId(sender), operationType, arguments[1]);
         if (session.isEmpty()) {
-            sender.sendMessage(
+            LoreItemsMessages.send(sender, 
                     "No matching unexpired confirmation exists. Run the destructive preview again.");
             return true;
         }
@@ -255,18 +255,18 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
 
     private void showStartResult(
             CommandSender sender, DestructiveAdministrationUseCase.StartResult result) {
-        sender.sendMessage(result.detail());
+        LoreItemsMessages.send(sender, result.detail());
         if (result.operation() == null) {
             return;
         }
-        sender.sendMessage(DestructiveCommandSupport.formatOperation(result.operation()));
+        LoreItemsMessages.send(sender, DestructiveCommandSupport.formatOperation(result.operation()));
         wakeDestructiveWork.run();
     }
 
     private boolean listOperations(CommandSender sender, String[] arguments) {
         if (!DestructiveCommandSupport.requirePermission(sender, INSPECT_PERMISSION)
                 || arguments.length > 2) {
-            sender.sendMessage("Usage: /loreitems operations [page]");
+            LoreItemsMessages.send(sender, "Usage: /loreitems operations [page]");
             return true;
         }
         PageRequest page = DestructiveCommandSupport.pageRequest(
@@ -281,7 +281,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         if (!DestructiveCommandSupport.requirePermission(sender, INSPECT_PERMISSION)
                 || arguments.length < 2
                 || arguments.length > 3) {
-            sender.sendMessage("Usage: /loreitems targets <operation-uuid> [page]");
+            LoreItemsMessages.send(sender, "Usage: /loreitems targets <operation-uuid> [page]");
             return true;
         }
         UUID operationId = DestructiveCommandSupport.parseUuid(arguments[1], "operation");
@@ -296,7 +296,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
     private boolean metrics(CommandSender sender, String[] arguments) {
         if (!DestructiveCommandSupport.requirePermission(sender, INSPECT_PERMISSION)
                 || arguments.length != 1) {
-            sender.sendMessage("Usage: /loreitems destructive-metrics");
+            LoreItemsMessages.send(sender, "Usage: /loreitems destructive-metrics");
             return true;
         }
         return submit(
@@ -308,7 +308,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
     private boolean control(CommandSender sender, String[] arguments, boolean pause) {
         if (!DestructiveCommandSupport.requirePermission(sender, CONTROL_PERMISSION)
                 || arguments.length != 2) {
-            sender.sendMessage("Usage: /loreitems " + (pause ? PAUSE : RESUME)
+            LoreItemsMessages.send(sender, "Usage: /loreitems " + (pause ? PAUSE : RESUME)
                     + " <operation-uuid>");
             return true;
         }
@@ -326,11 +326,11 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
             CommandSender sender,
             DestructiveAdministrationUseCase.ControlResult result,
             boolean pause) {
-        sender.sendMessage(result.detail());
+        LoreItemsMessages.send(sender, result.detail());
         if (result.operation() == null) {
             return;
         }
-        sender.sendMessage(DestructiveCommandSupport.formatOperation(result.operation()));
+        LoreItemsMessages.send(sender, DestructiveCommandSupport.formatOperation(result.operation()));
         if (!pause) {
             wakeDestructiveWork.run();
         }
@@ -339,7 +339,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
     private boolean review(CommandSender sender, String[] arguments) {
         if (!DestructiveCommandSupport.requirePermission(sender, REVIEW_PERMISSION)
                 || arguments.length < 5) {
-            sender.sendMessage("Usage: /loreitems resolve-removal <operation-uuid> "
+            LoreItemsMessages.send(sender, "Usage: /loreitems resolve-removal <operation-uuid> "
                     + "<instance-uuid> <requeue|removed|abort> <evidence>");
             return true;
         }
@@ -363,11 +363,11 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
             CommandSender sender,
             DestructiveAdministrationUseCase.ReviewResult result,
             DestructiveAdministrationUseCase.ReviewResolution resolution) {
-        sender.sendMessage(result.detail());
+        LoreItemsMessages.send(sender, result.detail());
         if (result.target() == null) {
             return;
         }
-        sender.sendMessage(DestructiveCommandSupport.formatTarget(result.target()));
+        LoreItemsMessages.send(sender, DestructiveCommandSupport.formatTarget(result.target()));
         if (resolution
                 == DestructiveAdministrationUseCase.ReviewResolution.REQUEUE_NO_SIDE_EFFECT) {
             wakeDestructiveWork.run();
@@ -380,16 +380,16 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
             Consumer<T> success) {
         String actor = DestructiveCommandSupport.actorId(sender);
         if (closed) {
-            sender.sendMessage("Destructive administration is unavailable.");
+            LoreItemsMessages.send(sender, "Destructive administration is unavailable.");
             return true;
         }
         if (!activeActors.add(actor)) {
-            sender.sendMessage("Your previous destructive administration request is still running.");
+            LoreItemsMessages.send(sender, "Your previous destructive administration request is still running.");
             return true;
         }
         if (!capacity.tryAcquire()) {
             activeActors.remove(actor);
-            sender.sendMessage("Destructive administration is busy; retry shortly.");
+            LoreItemsMessages.send(sender, "Destructive administration is busy; retry shortly.");
             return true;
         }
         CompletionStage<T> stage;
@@ -415,7 +415,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
         if (throwable != null) {
             reportFailure(sender, throwable);
         } else if (result == null) {
-            sender.sendMessage("Destructive administration returned no result.");
+            LoreItemsMessages.send(sender, "Destructive administration returned no result.");
         } else {
             success.accept(result);
         }
@@ -448,7 +448,7 @@ public final class LoreItemsDestructiveCommandExecutor implements AutoCloseable,
     private void reportFailure(CommandSender sender, Throwable throwable) {
         Throwable cause = DestructiveCommandSupport.unwrap(throwable);
         plugin.getLogger().log(Level.SEVERE, "Destructive administration command failed.", cause);
-        sender.sendMessage("Destructive administration failed: "
+        LoreItemsMessages.send(sender, "Destructive administration failed: "
                 + cause.getClass().getSimpleName()
                 + DestructiveCommandSupport.safeDetail(cause));
     }

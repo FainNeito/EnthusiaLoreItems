@@ -80,11 +80,11 @@ final class PaperTemplateManagementLoader {
         }
         TemplateManagementUseCase useCase = resolveUseCase();
         if (useCase == null) {
-            player.sendMessage(UNAVAILABLE);
+            LoreItemsMessages.send(player, UNAVAILABLE);
             return;
         }
         if (!queryCapacity.tryAcquire()) {
-            player.sendMessage("Too many template-management queries are active.");
+            LoreItemsMessages.send(player, "Too many template-management queries are active.");
             return;
         }
         loadSnapshot(playerId, definitionId, returnPage, useCase);
@@ -126,7 +126,7 @@ final class PaperTemplateManagementLoader {
             return;
         }
         if (snapshot == null || snapshot.isEmpty()) {
-            player.sendMessage("That lore definition is no longer active.");
+            LoreItemsMessages.send(player, "That lore definition is no longer active.");
             return;
         }
         try {

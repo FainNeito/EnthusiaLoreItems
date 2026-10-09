@@ -124,7 +124,7 @@ public final class LoreItemsAdministrationCommandExecutor implements CommandExec
         }
         if (BROWSE_SUBCOMMAND.equals(subcommand)) {
             if (!canBrowse(sender)) {
-                sender.sendMessage("You do not have permission to browse lore-item templates.");
+                LoreItemsMessages.send(sender, "You do not have permission to browse lore-item templates.");
                 return true;
             }
             executeBrowse(sender, arguments);
@@ -136,7 +136,7 @@ public final class LoreItemsAdministrationCommandExecutor implements CommandExec
         }
         CommandActor actor = CommandActor.capture(sender);
         if (!beginQuery(actor)) {
-            sender.sendMessage("A previous lore-item evidence query is still active; try again shortly.");
+            LoreItemsMessages.send(sender, "A previous lore-item evidence query is still active; try again shortly.");
             return true;
         }
         dispatchQuery(subcommand, actor, useCase, arguments);
@@ -145,11 +145,11 @@ public final class LoreItemsAdministrationCommandExecutor implements CommandExec
 
     private void executeBrowse(CommandSender sender, String[] arguments) {
         if (arguments.length != MIN_PAGE_NUMBER) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return;
         }
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("The lore-item browser requires an in-game player.");
+            LoreItemsMessages.send(sender, "The lore-item browser requires an in-game player.");
             return;
         }
         trackingGui.openDefinitions(player.getUniqueId(), MIN_PAGE_NUMBER);
@@ -163,26 +163,26 @@ public final class LoreItemsAdministrationCommandExecutor implements CommandExec
 
     private LoreItemsAdministrationUseCase resolveEvidenceUseCase(CommandSender sender) {
         if (!sender.hasPermission(AUDIT_PERMISSION)) {
-            sender.sendMessage("You do not have permission to inspect lore-item evidence.");
+            LoreItemsMessages.send(sender, "You do not have permission to inspect lore-item evidence.");
             return null;
         }
         LoreItemsAdministrationUseCase useCase = plugin.getServer()
                 .getServicesManager()
                 .load(LoreItemsAdministrationUseCase.class);
         if (useCase == null) {
-            sender.sendMessage("Lore-item administration is unavailable while storage initializes.");
+            LoreItemsMessages.send(sender, "Lore-item administration is unavailable while storage initializes.");
         }
         return useCase;
     }
 
     private static String parseSubcommand(CommandSender sender, String[] arguments) {
         if (arguments.length == 0) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return null;
         }
         String subcommand = arguments[0].toLowerCase(Locale.ROOT);
         if (!isSupportedSubcommand(subcommand)) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return null;
         }
         return subcommand;
@@ -483,7 +483,7 @@ public final class LoreItemsAdministrationCommandExecutor implements CommandExec
                         ? plugin.getServer().getConsoleSender()
                         : plugin.getServer().getPlayer(actor.playerId());
                 if (sender != null) {
-                    lines.forEach(sender::sendMessage);
+                    lines.forEach(line -> LoreItemsMessages.send(sender, line));
                 }
             });
         } catch (IllegalPluginAccessException exception) {

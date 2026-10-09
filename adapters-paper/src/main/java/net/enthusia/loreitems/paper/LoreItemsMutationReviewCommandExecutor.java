@@ -46,7 +46,7 @@ public final class LoreItemsMutationReviewCommandExecutor
             return true;
         }
         if (arguments.length < MIN_ARGUMENTS) {
-            sender.sendMessage(USAGE);
+            LoreItemsMessages.send(sender, USAGE);
             return true;
         }
         PendingMutationReviewUseCase.Request request;
@@ -58,7 +58,7 @@ public final class LoreItemsMutationReviewCommandExecutor
                     DestructiveCommandSupport.actorId(sender),
                     String.join(" ", Arrays.copyOfRange(arguments, 3, arguments.length)));
         } catch (IllegalArgumentException exception) {
-            sender.sendMessage("Invalid mutation review: " + exception.getMessage());
+            LoreItemsMessages.send(sender, "Invalid mutation review: " + exception.getMessage());
             return true;
         }
         return submit(sender, request);
@@ -66,12 +66,12 @@ public final class LoreItemsMutationReviewCommandExecutor
 
     private boolean submit(CommandSender sender, PendingMutationReviewUseCase.Request request) {
         if (closed) {
-            sender.sendMessage("Mutation review is unavailable.");
+            LoreItemsMessages.send(sender, "Mutation review is unavailable.");
             return true;
         }
         PendingMutationReviewUseCase useCase = useCaseSupplier.get();
         if (useCase == null) {
-            sender.sendMessage("Durable mutation review is not active.");
+            LoreItemsMessages.send(sender, "Durable mutation review is not active.");
             return true;
         }
         CompletionStage<PendingMutationReviewUseCase.Result> stage = resolve(sender, useCase, request);
@@ -115,10 +115,10 @@ public final class LoreItemsMutationReviewCommandExecutor
             return;
         }
         if (result == null) {
-            sender.sendMessage("Mutation review returned no result.");
+            LoreItemsMessages.send(sender, "Mutation review returned no result.");
             return;
         }
-        sender.sendMessage(result.detail());
+        LoreItemsMessages.send(sender, result.detail());
         if (result.status() == PendingMutationReviewUseCase.Status.RETRIED) {
             retryWake.run();
         }
@@ -138,7 +138,7 @@ public final class LoreItemsMutationReviewCommandExecutor
     private void reportFailure(CommandSender sender, Throwable throwable) {
         Throwable cause = DestructiveCommandSupport.unwrap(throwable);
         plugin.getLogger().log(Level.SEVERE, "Mutation-review command failed.", cause);
-        sender.sendMessage("Mutation review failed: " + cause.getClass().getSimpleName()
+        LoreItemsMessages.send(sender, "Mutation review failed: " + cause.getClass().getSimpleName()
                 + DestructiveCommandSupport.safeDetail(cause));
     }
 

@@ -99,7 +99,7 @@ public final class DistributionCampaignCommandExecutor
             CommandSender sender, Command command, String label, String[] args) {
         Objects.requireNonNull(sender, "sender");
         if (closed) {
-            sender.sendMessage("Distribution campaigns are unavailable while LoreItems is stopping.");
+            LoreItemsMessages.send(sender, "Distribution campaigns are unavailable while LoreItems is stopping.");
             return true;
         }
         if (args.length == 0) {
@@ -110,7 +110,7 @@ public final class DistributionCampaignCommandExecutor
         try {
             return route(sender, label, subcommand, args);
         } catch (IllegalArgumentException | ArithmeticException exception) {
-            sender.sendMessage("Invalid distribution command: " + safeMessage(exception));
+            LoreItemsMessages.send(sender, "Invalid distribution command: " + safeMessage(exception));
             return true;
         }
     }
@@ -171,9 +171,9 @@ public final class DistributionCampaignCommandExecutor
             }
         }, blockingExecutor);
         completeOnMain(sender, stage, definition -> {
-            sender.sendMessage("Group " + definition.sourceName() + " — " + definition.displayName());
-            sender.sendMessage("Recipients: " + definition.recipients().size());
-            sender.sendMessage("Fingerprint: " + definition.sourceFingerprint());
+            LoreItemsMessages.send(sender, "Group " + definition.sourceName() + " — " + definition.displayName());
+            LoreItemsMessages.send(sender, "Recipients: " + definition.recipients().size());
+            LoreItemsMessages.send(sender, "Fingerprint: " + definition.sourceFingerprint());
         });
         return true;
     }
@@ -186,7 +186,7 @@ public final class DistributionCampaignCommandExecutor
                 args[1], new DefinitionKey(args[2]), actor.type(), actor.id());
         completeOnMain(sender, stage, result -> {
             if (result.isEmpty()) {
-                sender.sendMessage("No active lore definition matches that definition key.");
+                LoreItemsMessages.send(sender, "No active lore definition matches that definition key.");
                 return;
             }
             DistributionCampaignPreview preview = result.orElseThrow();
@@ -203,12 +203,12 @@ public final class DistributionCampaignCommandExecutor
         Actor actor = actor(sender);
         DistributionCampaignPreview preview = previews.remove(new PreviewKey(actor.id(), campaignId));
         if (preview == null) {
-            sender.sendMessage("No pending preview with that campaign UUID belongs to you.");
+            LoreItemsMessages.send(sender, "No pending preview with that campaign UUID belongs to you.");
             return true;
         }
         completeOnMain(sender, coordinator.confirm(preview), result -> {
-            sender.sendMessage(result.detail());
-            sender.sendMessage("Campaign: " + result.campaignId());
+            LoreItemsMessages.send(sender, result.detail());
+            LoreItemsMessages.send(sender, "Campaign: " + result.campaignId());
             if (result.status() == DistributionCampaignConfirmationResult.Status.STARTED
                     || result.status()
                             == DistributionCampaignConfirmationResult.Status.STARTED_MARKER_REPAIR_REQUIRED) {
@@ -223,9 +223,9 @@ public final class DistributionCampaignCommandExecutor
         int pageNumber = parsePage(args, 1);
         PageRequest page = request(pageNumber, pageSize);
         completeOnMain(sender, administration.listCampaigns(page), result -> {
-            sender.sendMessage("Distribution campaigns — page " + pageNumber);
+            LoreItemsMessages.send(sender, "Distribution campaigns — page " + pageNumber);
             for (DistributionCampaign campaign : result.items()) {
-                sender.sendMessage(campaign.campaignId() + " " + campaign.state()
+                LoreItemsMessages.send(sender, campaign.campaignId() + " " + campaign.state()
                         + " " + campaign.sourceName() + " -> " + campaign.displayName());
             }
             sendPageFooter(sender, result.hasMore());
@@ -239,7 +239,7 @@ public final class DistributionCampaignCommandExecutor
         UUID campaignId = UUID.fromString(args[1]);
         completeOnMain(sender, administration.status(campaignId), result -> {
             if (result.isEmpty()) {
-                sender.sendMessage("No distribution campaign has that UUID.");
+                LoreItemsMessages.send(sender, "No distribution campaign has that UUID.");
                 return;
             }
             showStatus(sender, result.orElseThrow());
@@ -270,7 +270,7 @@ public final class DistributionCampaignCommandExecutor
                 ? administration.pause(campaignId, actor.type(), actor.id())
                 : administration.resume(campaignId, actor.type(), actor.id());
         completeOnMain(sender, stage, changed -> {
-            sender.sendMessage(Boolean.TRUE.equals(changed)
+            LoreItemsMessages.send(sender, Boolean.TRUE.equals(changed)
                     ? "Campaign " + (pause ? "paused." : "resumed.")
                     : "Campaign state did not allow that transition.");
             if (!pause && Boolean.TRUE.equals(changed)) {
@@ -309,12 +309,12 @@ public final class DistributionCampaignCommandExecutor
         }
         if (!result.cancelled()) {
             cancellationFence.release(campaignId);
-            sender.sendMessage("Campaign was not cancelled; its durable state did not permit it.");
+            LoreItemsMessages.send(sender, "Campaign was not cancelled; its durable state did not permit it.");
             return;
         }
         cancellationFence.committed(campaignId);
         markerWake.run();
-        sender.sendMessage("Campaign cancelled; pending recipients cancelled: "
+        LoreItemsMessages.send(sender, "Campaign cancelled; pending recipients cancelled: "
                 + result.recipientsCancelled());
     }
 
@@ -374,12 +374,12 @@ public final class DistributionCampaignCommandExecutor
                 sender,
                 markerReconciler.reconcile(request(pageNumber, pageSize)),
                 page -> {
-                    sender.sendMessage("Distribution marker reconciliation — page " + pageNumber);
+                    LoreItemsMessages.send(sender, "Distribution marker reconciliation — page " + pageNumber);
                     for (DistributionMarkerReconciliationPage.Entry entry : page.entries()) {
-                        sender.sendMessage(entry.campaignId() + " " + entry.campaignState()
+                        LoreItemsMessages.send(sender, entry.campaignId() + " " + entry.campaignState()
                                 + " " + entry.status() + " — " + entry.detail());
                     }
-                    sender.sendMessage(page.nextPage() == null
+                    LoreItemsMessages.send(sender, page.nextPage() == null
                             ? "End of results."
                             : "More results available.");
                 });
@@ -433,7 +433,7 @@ public final class DistributionCampaignCommandExecutor
     }
 
     private static void sendFailure(CommandSender sender, Throwable throwable) {
-        sender.sendMessage("Distribution operation failed safely: " + safeMessage(throwable));
+        LoreItemsMessages.send(sender, "Distribution operation failed safely: " + safeMessage(throwable));
     }
 
     private static void requirePermission(CommandSender sender, String permission) {

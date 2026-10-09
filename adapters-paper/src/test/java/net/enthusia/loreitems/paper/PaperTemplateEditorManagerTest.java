@@ -91,7 +91,7 @@ class PaperTemplateEditorManagerTest {
         openEditor();
         click(10);
         assertTrue(manager.awaitingChat(player.getUniqueId()));
-        manager.receiveChat(player.getUniqueId(), "submit missing-style");
+        manager.receiveChat(player.getUniqueId(), "missing-style");
         assertTrue(manager.awaitingChat(player.getUniqueId()));
         assertEquals(PaperTemplateEditorSession.State.AWAITING_CHAT,
                 manager.sessionState(player.getUniqueId()));
@@ -133,7 +133,7 @@ class PaperTemplateEditorManagerTest {
         assertNotNull(currentSessionId);
         assertFalse(staleSessionId.equals(currentSessionId));
 
-        manager.receiveChat(player.getUniqueId(), staleSessionId, "submit literal stale");
+        manager.receiveChat(player.getUniqueId(), staleSessionId, "literal stale");
         assertTrue(manager.awaitingChat(player.getUniqueId()));
         assertEquals(PaperTemplateEditorSession.State.AWAITING_CHAT,
                 manager.sessionState(player.getUniqueId()));
@@ -141,10 +141,30 @@ class PaperTemplateEditorManagerTest {
     }
 
     @Test
+    void privateSetCommandEditsTheSelectedFieldWithoutPublicChat() {
+        openEditor();
+        click(11);
+        assertTrue(manager.awaitingChat(player.getUniqueId()));
+
+        LoreItemsEditorCommandSupport.execute(
+                player, new String[] {"set", "literal", "Private", "name"}, manager);
+
+        assertFalse(manager.awaitingChat(player.getUniqueId()));
+        assertEquals(PaperTemplateEditorSession.State.EDITING,
+                manager.sessionState(player.getUniqueId()));
+        ItemStack draft = player.getOpenInventory().getTopInventory().getItem(4);
+        assertNotNull(draft);
+        assertEquals("Private name",
+                net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                        .plainText().serialize(draft.getItemMeta().customName()));
+        assertEquals(0, useCase.confirmCalls);
+    }
+
+    @Test
     void duplicateConfirmationClicksCreateOneLogicalRequestAndWakeOneRollout() {
         openEditor();
         click(10);
-        manager.receiveChat(player.getUniqueId(), "submit literal Edited name");
+        manager.receiveChat(player.getUniqueId(), "literal Edited name");
         click(PaperTemplateEditorRenderer.EDITOR_PREVIEW);
         assertEquals(PaperTemplateEditorSession.State.PREVIEW,
                 manager.sessionState(player.getUniqueId()));
@@ -172,7 +192,7 @@ class PaperTemplateEditorManagerTest {
     void confirmationTimeoutDoesNotClaimTheDurableRequestWasCancelled() {
         openEditor();
         click(10);
-        manager.receiveChat(player.getUniqueId(), "submit literal Edited name");
+        manager.receiveChat(player.getUniqueId(), "literal Edited name");
         click(PaperTemplateEditorRenderer.EDITOR_PREVIEW);
         click(PaperTemplateEditorRenderer.PREVIEW_CONFIRM);
         assertEquals(1, useCase.confirmCalls);
@@ -186,7 +206,7 @@ class PaperTemplateEditorManagerTest {
 
         assertEquals(0, manager.activeSessionCount());
         assertEquals(
-                Component.text(
+                LoreItemsMessages.format(
                         "Template confirmation is still processing; reopen management to check durable status."),
                 player.nextComponentMessage());
         assertEquals(0, rolloutWakes.get());
@@ -196,7 +216,7 @@ class PaperTemplateEditorManagerTest {
     void unchangedDraftCannotCreateARevision() {
         openEditor();
         click(10);
-        manager.receiveChat(player.getUniqueId(), "submit clear");
+        manager.receiveChat(player.getUniqueId(), "clear");
         click(PaperTemplateEditorRenderer.EDITOR_PREVIEW);
         click(PaperTemplateEditorRenderer.PREVIEW_CONFIRM);
 

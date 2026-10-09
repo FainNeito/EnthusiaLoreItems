@@ -276,7 +276,7 @@ public final class PaperAnomalyWarningWorker
         plugin.getServer().getConsoleSender().sendMessage(message);
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             if (player.hasPermission(LoreItemsAdministrationCommandExecutor.AUDIT_PERMISSION)) {
-                player.sendMessage(message);
+                LoreItemsMessages.send(player, message);
             }
         }
     }

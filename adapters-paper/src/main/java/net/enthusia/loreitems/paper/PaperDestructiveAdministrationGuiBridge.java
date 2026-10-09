@@ -76,7 +76,7 @@ final class PaperDestructiveAdministrationGuiBridge implements Listener {
 
     private void preview(Player player, String permission, String command) {
         if (!player.hasPermission(permission)) {
-            player.sendMessage("You do not have permission: " + permission);
+            LoreItemsMessages.send(player, "You do not have permission: " + permission);
             return;
         }
         try {

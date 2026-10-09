@@ -88,7 +88,7 @@ jobs:
           async function noWin(){for(let i=0;i<160;i++){if(!bot.currentWindow)return;await sleep(100)}throw Error('window did not close')}
           async function click(slot){await bot.clickWindow(slot,0,0)}
           async function clickLabel(label){const slot=guiSlot(label);log(`GUI_CLICK label=${label} slot=${slot}`);await click(slot)}
-          async function edit(){bot.chat('/loreitems browse');await win('Lore definitions');await click(0);await win('Template management');await clickLabel('Edit template');await win('Template editor');await clickLabel('Custom name');await noWin();bot.chat('submit literal Rollout Revision Two');await win('Template editor');await clickLabel('Preview and confirm');await win('Confirm template revision');await clickLabel('Confirm revision');await win('Template management');fs.writeFileSync(`${root}/edit.done`,'ok\n');log('edit complete')}
+          async function edit(){bot.chat('/loreitems browse');await win('Lore definitions');await click(0);await win('Template management');await clickLabel('Edit template');await win('Template editor');await clickLabel('Custom name');await noWin();bot.chat('/loreitems set literal Rollout Revision Two');await win('Template editor');await clickLabel('Preview and confirm');await win('Confirm template revision');await clickLabel('Confirm revision');await win('Template management');fs.writeFileSync(`${root}/edit.done`,'ok\n');log('edit complete')}
           bot.on('error',e=>log(`ERROR ${e.stack||e}`))
           bot.once('spawn',async()=>{try{fs.writeFileSync(`${root}/${safe}.uuid`,`${bot.player.uuid}\n`);if(name==='Wp05Rollout'&&role==='scenario'){
             await waitFile('go-chest');await chestDeposit(4,200,0,'chest')

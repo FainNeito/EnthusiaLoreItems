@@ -233,7 +233,7 @@ final class PaperDistributionDeliveryOutcomeHandler {
         scheduleMain(() -> {
             Player player = plugin.getServer().getPlayer(playerId);
             if (player != null) {
-                player.sendMessage(message);
+                LoreItemsMessages.send(player, message);
             }
         });
     }

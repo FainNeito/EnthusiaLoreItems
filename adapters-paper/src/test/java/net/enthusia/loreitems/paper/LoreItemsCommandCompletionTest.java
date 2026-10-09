@@ -78,7 +78,7 @@ class LoreItemsCommandCompletionTest {
         player.addAttachment(plugin, PaperTemplateEditorManager.EDIT_PERMISSION, true);
 
         assertEquals(
-                List.of("browse"),
+                List.of("set", "editor", "browse"),
                 LoreItemsCommandExecutor.topLevelCompletions(player, ""));
         assertTrue(PaperTrackingAdministrationGui.canUseScreen(
                 player, PaperTrackingAdministrationView.Screen.DEFINITIONS));

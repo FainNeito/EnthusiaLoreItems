@@ -98,10 +98,6 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         return pendingChatSessions.get(Objects.requireNonNull(playerId, "playerId"));
     }
 
-    void receiveChatAsync(UUID playerId, UUID sessionId, String message) {
-        runMain(() -> receiveChat(playerId, sessionId, message));
-    }
-
     void handleQuit(UUID playerId) {
         PaperTemplateEditorSession session = sessions.get(playerId);
         if (session != null && session.state == PaperTemplateEditorSession.State.AWAITING_CHAT) {
@@ -119,16 +115,16 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
     void cancelOwnDraft(Player player) {
         Objects.requireNonNull(player, "player");
         if (!player.hasPermission(EDIT_PERMISSION)) {
-            player.sendMessage("You do not have permission to edit lore-item templates.");
+            LoreItemsMessages.send(player, "You do not have permission to edit lore-item templates.");
             return;
         }
         PaperTemplateEditorSession session = sessions.get(player.getUniqueId());
         if (session == null) {
-            player.sendMessage("You do not have an active template draft.");
+            LoreItemsMessages.send(player, "You do not have an active template draft.");
             return;
         }
         if (session.state == PaperTemplateEditorSession.State.CONFIRMING) {
-            player.sendMessage(
+            LoreItemsMessages.send(player, 
                     "Template confirmation is already processing and cannot be cancelled; reopen management to check durable status.");
             return;
         }
@@ -141,7 +137,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
             for (PaperTemplateEditorSession session : sessions.values()) {
                 Player player = Bukkit.getPlayer(session.playerId);
                 if (player != null) {
-                    player.sendMessage("Template draft cancelled: " + reason);
+                    LoreItemsMessages.send(player, "Template draft cancelled: " + reason);
                     org.bukkit.inventory.Inventory topInventory =
                             player.getOpenInventory().getTopInventory();
                     if (topInventory != null
@@ -167,7 +163,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
 
     void dispatchClick(Player player, PaperTemplateEditorView view, int slot) {
         if (!LoreItemsAdministrationCommandExecutor.canBrowse(player)) {
-            player.sendMessage("You do not have permission to browse lore-item templates.");
+            LoreItemsMessages.send(player, "You do not have permission to browse lore-item templates.");
             return;
         }
         switch (view.screen) {
@@ -194,16 +190,16 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
 
     private void beginEdit(Player player, PaperTemplateEditorView view, boolean replaceHeld) {
         if (!player.hasPermission(EDIT_PERMISSION)) {
-            player.sendMessage("You do not have permission to edit lore-item templates.");
+            LoreItemsMessages.send(player, "You do not have permission to edit lore-item templates.");
             return;
         }
         if (sessions.containsKey(player.getUniqueId())) {
-            player.sendMessage(
+            LoreItemsMessages.send(player, 
                     "You already have an active template draft. Use /loreitems editor cancel to discard it safely before starting another.");
             return;
         }
         if (sessions.size() >= MAX_SESSIONS) {
-            player.sendMessage("The bounded template-editor session limit is currently full.");
+            LoreItemsMessages.send(player, "The bounded template-editor session limit is currently full.");
             return;
         }
         try {
@@ -222,7 +218,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
                 renderer.showEditor(player, session);
             }
         } catch (IllegalArgumentException exception) {
-            player.sendMessage(exception.getMessage());
+            LoreItemsMessages.send(player, exception.getMessage());
         } catch (RuntimeException exception) {
             handleFailure(player.getUniqueId(), "begin template draft", exception);
         }
@@ -258,8 +254,9 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         pendingChatSessions.put(player.getUniqueId(), session.sessionId);
         resetTimeout(session);
         player.closeInventory();
-        player.sendMessage(action.title() + ": " + String.join(" ", action.help()));
-        player.sendMessage("Type submit <value> to apply this draft edit, or type cancel.");
+        LoreItemsMessages.send(player, "Editing " + action.title() + ": " + String.join(" ", action.help()));
+        LoreItemsMessages.send(player, "Run /loreitems set <value> to apply this edit.");
+        LoreItemsMessages.send(player, "Run /loreitems set cancel to return without changing the draft.");
     }
 
     void receiveChat(UUID playerId, String message) {
@@ -293,20 +290,16 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
             renderer.showEditor(player, session);
             return;
         }
-        if (!message.regionMatches(true, 0, "submit ", 0, 7)) {
-            player.sendMessage("Nothing was applied. Type submit <value>, or cancel.");
-            return;
-        }
-        String input = message.substring(7).strip();
+        String input = message.strip();
         if (input.isEmpty()) {
-            player.sendMessage("Nothing was applied. A value is required after submit.");
+            LoreItemsMessages.send(player, "Nothing was applied. Run /loreitems set <value>, or /loreitems set cancel.");
             return;
         }
         PaperTemplateEditResult result = draftEditor.apply(
                 session.draft, session.pendingAction, input);
         if (!result.accepted()) {
-            player.sendMessage("Validation failed: " + result.detail());
-            player.sendMessage("Correct the value with submit <value>, or type cancel.");
+            LoreItemsMessages.send(player, "Validation failed: " + result.detail());
+            LoreItemsMessages.send(player, "Correct it with /loreitems set <value>, or /loreitems set cancel.");
             return;
         }
         session.draft = result.item();
@@ -314,7 +307,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         session.state = PaperTemplateEditorSession.State.EDITING;
         pendingChatSessions.remove(player.getUniqueId());
         resetTimeout(session);
-        player.sendMessage(result.detail());
+        LoreItemsMessages.send(player, result.detail());
         renderer.showEditor(player, session);
     }
 
@@ -342,12 +335,12 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
             return;
         }
         if (session.state == PaperTemplateEditorSession.State.CONFIRMING) {
-            player.sendMessage("This draft confirmation is already being processed.");
+            LoreItemsMessages.send(player, "This draft confirmation is already being processed.");
             return;
         }
         TemplateManagementUseCase useCase = resolveUseCase();
         if (useCase == null) {
-            player.sendMessage(UNAVAILABLE);
+            LoreItemsMessages.send(player, UNAVAILABLE);
             return;
         }
         final TemplateRevisionRolloutRequest request;
@@ -360,7 +353,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
                     player.getUniqueId()).withTemplate(templateCodec.encode(session.draft));
             request = draft.confirm(PaperTemplateEditorSupport.requireBatchLimit(batchLimitSupplier));
         } catch (IllegalArgumentException exception) {
-            player.sendMessage("Confirmation rejected: " + exception.getMessage());
+            LoreItemsMessages.send(player, "Confirmation rejected: " + exception.getMessage());
             return;
         }
         session.state = PaperTemplateEditorSession.State.CONFIRMING;
@@ -395,7 +388,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         }
         if (result == null) {
             session.state = PaperTemplateEditorSession.State.PREVIEW;
-            player.sendMessage("Confirmation returned no result; no completion was claimed.");
+            LoreItemsMessages.send(player, "Confirmation returned no result; no completion was claimed.");
             return;
         }
         if (result.status() == TemplateRevisionStartStatus.STARTED
@@ -404,7 +397,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
             pendingChatSessions.remove(playerId);
             session.close();
             player.closeInventory();
-            player.sendMessage("Template revision " + result.currentRevision().value()
+            LoreItemsMessages.send(player, "Template revision " + result.currentRevision().value()
                     + " is durable; rollout work is queued.");
             rolloutWake.run();
             openManagementMain(playerId, session.snapshot.definition().id(), session.returnPage);
@@ -414,7 +407,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         pendingChatSessions.remove(playerId);
         session.close();
         player.closeInventory();
-        player.sendMessage("Template confirmation was not applied: " + result.status());
+        LoreItemsMessages.send(player, "Template confirmation was not applied: " + result.status());
         openManagementMain(playerId, session.snapshot.definition().id(), session.returnPage);
     }
 
@@ -422,7 +415,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
             Player player, PaperTemplateEditorView view) {
         PaperTemplateEditorSession session = sessions.get(player.getUniqueId());
         if (session == null || !session.matches(view.sessionId)) {
-            player.sendMessage("That template-editor screen is stale; no edit was applied.");
+            LoreItemsMessages.send(player, "That template-editor screen is stale; no edit was applied.");
             return null;
         }
         resetTimeout(session);
@@ -438,7 +431,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         pendingChatSessions.remove(player.getUniqueId());
         session.close();
         player.closeInventory();
-        player.sendMessage(detail);
+        LoreItemsMessages.send(player, detail);
         if (reopenManagement) {
             openManagementMain(
                     player.getUniqueId(),
@@ -470,7 +463,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         session.close();
         if (player != null) {
             player.closeInventory();
-            player.sendMessage(confirmationInFlight
+            LoreItemsMessages.send(player, confirmationInFlight
                     ? "Template confirmation is still processing; reopen management to check durable status."
                     : "Template draft timed out; no revision was created.");
         }
@@ -504,7 +497,7 @@ public final class PaperTemplateEditorManager implements AutoCloseable {
         runMain(() -> {
             Player player = Bukkit.getPlayer(playerId);
             if (player != null) {
-                player.sendMessage(detail);
+                LoreItemsMessages.send(player, detail);
             }
         });
     }

@@ -161,7 +161,7 @@ final class PaperTemplateEditorRenderer {
                 PaperGuiStyle.Tone.METADATA,
                 List.of(
                         "The item above is your complete current draft.",
-                        "Choose a component to edit it through chat.",
+                        "Choose a component, then use /loreitems set <value>.",
                         "",
                         "Nothing is durable until preview and confirmation.")));
         inventory.setItem(EDITOR_PREVIEW, item(
@@ -223,47 +223,47 @@ final class PaperTemplateEditorRenderer {
 
         // Core item identity and presentation: centered seven-wide row.
         add(actions, 10, "material", Material.STONE, "Base material",
-                "submit minecraft:diamond_sword");
+                "/loreitems set minecraft:diamond_sword");
         add(actions, 11, "custom-name", Material.NAME_TAG, "Custom name",
-                "submit clear | literal <text> | solid <hex> <text> | gradient <colors> <text>");
+                "/loreitems set clear | literal <text> | solid <hex> <text> | gradient <colors> <text>");
         add(actions, 12, "item-name", Material.PAPER, "Item name",
-                "submit clear | literal/solid/gradient ...");
+                "/loreitems set clear | literal/solid/gradient ...");
         add(actions, 13, "lore", Material.WRITABLE_BOOK, "Lore lines",
-                "submit add/edit/remove/move/clear ...");
+                "/loreitems set add/edit/remove/move/clear ...");
         add(actions, 14, "enchant", Material.ENCHANTED_BOOK, "Enchantments",
-                "submit set/remove/clear/tooltip ...");
+                "/loreitems set set/remove/clear/tooltip ...");
         add(actions, 15, "glint", Material.GLOWSTONE_DUST, "Glint override",
-                "submit true | false | unset");
+                "/loreitems set true | false | unset");
         add(actions, 16, "durability", Material.ANVIL, "Damage and unbreakable",
-                "submit damage <value> | unbreakable true|false");
+                "/loreitems set damage <value> | unbreakable true|false");
 
         // Model, combat and appearance components: second centered row.
         add(actions, 19, "attribute", Material.IRON_CHESTPLATE, "Attributes",
-                "submit set/remove/clear ... stable modifier key required");
+                "/loreitems set set/remove/clear ... stable modifier key required");
         add(actions, 20, "item-model", Material.ITEM_FRAME, "Item model",
-                "submit <namespaced-key> | clear");
+                "/loreitems set <namespaced-key> | clear");
         add(actions, 21, "max-stack", Material.BUNDLE, "Maximum stack size",
-                "submit 1 (tracked items are always normalized to one)");
+                "/loreitems set 1 (tracked items are always normalized to one)");
         add(actions, 22, "custom-model-data", Material.COMMAND_BLOCK, "Custom model data",
-                "submit floats/flags/strings/colors ... | clear");
+                "/loreitems set floats/flags/strings/colors ... | clear");
         add(actions, 23, "dye", Material.LEATHER_CHESTPLATE, "Dyed color",
-                "submit #RRGGBB | clear");
+                "/loreitems set #RRGGBB | clear");
         add(actions, 24, "potion", Material.POTION, "Potion components",
-                "submit base/set-effect/remove-effect/clear-effects/color/clear-color ...");
+                "/loreitems set base/set-effect/remove-effect/clear-effects/color/clear-color ...");
         add(actions, 25, "trim", Material.NETHERITE_CHESTPLATE, "Armor trim",
-                "submit <material-key> <pattern-key> | clear");
+                "/loreitems set <material-key> <pattern-key> | clear");
 
         // Specialized components: compact centered five-wide row.
         add(actions, 29, "banner", Material.WHITE_BANNER, "Banner patterns",
-                "submit add/set/remove/clear ...");
+                "/loreitems set add/set/remove/clear ...");
         add(actions, 30, "profile", Material.PLAYER_HEAD, "Player profile",
-                "submit <uuid> [name] | clear");
+                "/loreitems set <uuid> [name] | clear");
         add(actions, 31, "firework", Material.FIREWORK_ROCKET, "Firework effects",
-                "submit power/add/remove/clear (rocket) or set/clear (star)");
+                "/loreitems set power/add/remove/clear (rocket) or set/clear (star)");
         add(actions, 32, "flags", Material.REDSTONE_TORCH, "Item flags",
-                "submit add <flag> | remove <flag> | clear");
+                "/loreitems set add <flag> | remove <flag> | clear");
         add(actions, 33, "tooltip", Material.KNOWLEDGE_BOOK, "Tooltip controls",
-                "submit hide true|false | style <key|clear>");
+                "/loreitems set hide true|false | style <key|clear>");
         return Map.copyOf(actions);
     }
 

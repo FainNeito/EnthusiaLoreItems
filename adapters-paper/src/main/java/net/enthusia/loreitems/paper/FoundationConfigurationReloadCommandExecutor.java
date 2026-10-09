@@ -27,11 +27,11 @@ public final class FoundationConfigurationReloadCommandExecutor {
     public boolean execute(CommandSender sender) {
         Objects.requireNonNull(sender, "sender");
         if (!sender.hasPermission(RELOAD_PERMISSION)) {
-            sender.sendMessage("You do not have permission to reload LoreItems configuration.");
+            LoreItemsMessages.send(sender, "You do not have permission to reload LoreItems configuration.");
             return true;
         }
         if (!inFlight.compareAndSet(false, true)) {
-            sender.sendMessage("A LoreItems configuration reload is already running.");
+            LoreItemsMessages.send(sender, "A LoreItems configuration reload is already running.");
             return true;
         }
 
@@ -48,7 +48,7 @@ public final class FoundationConfigurationReloadCommandExecutor {
             inFlight.set(false);
             scheduleResult(() -> deliverResult(sender, result, throwable));
         });
-        sender.sendMessage("LoreItems configuration reload started.");
+        LoreItemsMessages.send(sender, "LoreItems configuration reload started.");
         return true;
     }
 
@@ -61,13 +61,13 @@ public final class FoundationConfigurationReloadCommandExecutor {
             return;
         }
         if (result == null) {
-            sender.sendMessage("LoreItems configuration reload failed safely: no result was returned.");
+            LoreItemsMessages.send(sender, "LoreItems configuration reload failed safely: no result was returned.");
             return;
         }
         String prefix = result.applied()
                 ? "LoreItems configuration reload applied: "
                 : "LoreItems configuration reload rejected: ";
-        sender.sendMessage(prefix + result.detail());
+        LoreItemsMessages.send(sender, prefix + result.detail());
     }
 
     private void scheduleResult(Runnable task) {
@@ -85,7 +85,7 @@ public final class FoundationConfigurationReloadCommandExecutor {
         Throwable cause = unwrap(throwable);
         plugin.getLogger().log(Level.SEVERE, "LoreItems configuration reload command failed.", cause);
         String message = cause.getMessage();
-        sender.sendMessage("LoreItems configuration reload failed safely: "
+        LoreItemsMessages.send(sender, "LoreItems configuration reload failed safely: "
                 + cause.getClass().getSimpleName()
                 + (message == null || message.isBlank() ? "" : ": " + message));
     }

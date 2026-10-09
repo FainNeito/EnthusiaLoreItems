@@ -68,7 +68,7 @@ jobs:
           async function noWin(){for(let i=0;i<160;i++){if(!b.currentWindow)return;await sleep(100)}throw Error('window did not close')}
           async function click(n){await b.clickWindow(n,0,0)}
           async function clickLabel(label){await click(slot(label))}
-          async function edit(){b.chat('/loreitems browse');await win('Lore definitions');await click(0);await win('Template management');await clickLabel('Edit template');await win('Template editor');await clickLabel('Custom name');await noWin();b.chat('submit literal Lifecycle Revision Two');await win('Template editor');await clickLabel('Preview and confirm');await win('Confirm template revision');await clickLabel('Confirm revision');await win('Template management');fs.writeFileSync(`${r}/edit.done`,'ok\n')}
+          async function edit(){b.chat('/loreitems browse');await win('Lore definitions');await click(0);await win('Template management');await clickLabel('Edit template');await win('Template editor');await clickLabel('Custom name');await noWin();b.chat('/loreitems set literal Lifecycle Revision Two');await win('Template editor');await clickLabel('Preview and confirm');await win('Confirm template revision');await clickLabel('Confirm revision');await win('Template management');fs.writeFileSync(`${r}/edit.done`,'ok\n')}
           b.once('spawn',async()=>{try{fs.writeFileSync(`${r}/${q}.uuid`,`${b.player.uuid}\n`);if(name==='Wp05LifeAdmin'){await file(`${r}/edit.go`);await edit()}while(!fs.existsSync(`${r}/${q}.stop`))await sleep(100);b.quit('transition')}catch(e){fs.writeFileSync(`${r}/${q}.failed`,String(e.stack||e));process.exit(1)}})
           EOF
       - name: Execute ACC-LIFE-001 and ACC-LIFE-002 with four pending state machines
