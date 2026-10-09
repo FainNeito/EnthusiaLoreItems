@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DefinitionReadinessTest {
+    private static final String MISSING_DEFINITION_KEY = "missing";
     @TempDir Path directory;
 
     @Test
@@ -46,7 +47,7 @@ class DefinitionReadinessTest {
                     runtime, FoundationConfiguration.defaults()).writable().deliveryService();
             long before = changes(runtime);
             assertTrue(service.isDefinitionActive(" KOTH_BLADE ").toCompletableFuture().join());
-            assertFalse(service.isDefinitionActive("missing").toCompletableFuture().join());
+            assertFalse(service.isDefinitionActive(MISSING_DEFINITION_KEY).toCompletableFuture().join());
             assertFalse(service.isDefinitionActive(null).toCompletableFuture().join());
             assertFalse(service.isDefinitionActive("invalid key").toCompletableFuture().join());
             assertEquals(before, changes(runtime), "A readiness query must write nothing");
@@ -75,13 +76,13 @@ class DefinitionReadinessTest {
                 runtime, FoundationConfiguration.defaults()).writable().deliveryService();
         AtomicReference<LoreItemsServiceV1> delegate = new AtomicReference<>(available);
         LoreItemsServiceV1 registered = LoreItemsServiceDelegates.delegating(delegate);
-        assertFalse(registered.isDefinitionActive("missing").toCompletableFuture().join());
+        assertFalse(registered.isDefinitionActive(MISSING_DEFINITION_KEY).toCompletableFuture().join());
         delegate.set(LoreItemsServiceDelegates.unavailable("stopping"));
         assertThrows(CompletionException.class,
-                () -> registered.isDefinitionActive("missing").toCompletableFuture().join());
+                () -> registered.isDefinitionActive(MISSING_DEFINITION_KEY).toCompletableFuture().join());
         runtime.close(Duration.ofSeconds(5));
         assertThrows(CompletionException.class,
-                () -> available.isDefinitionActive("missing").toCompletableFuture().join());
+                () -> available.isDefinitionActive(MISSING_DEFINITION_KEY).toCompletableFuture().join());
     }
 
     private static long changes(SQLiteStorageRuntime runtime) {
