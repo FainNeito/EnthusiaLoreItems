@@ -19,7 +19,13 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /** Disposable runtime probe; never included in the production plugin JAR. */
+// Paper isolates plugin class loaders. This test-only probe deliberately reaches package-private
+// discovery code in the target loader, avoiding a new production API solely for acceptance.
+@SuppressWarnings({"PMD.UseProperClassLoader", "PMD.AvoidAccessibilityAlteration"})
 final class ShulkerDiscoveryProbe {
+    private static final int OBSERVATIONS_PER_WINDOW = 729;
+    private static final int WINDOWS = 20;
+    private static final int MAX_PASSES = 1280;
     private final JavaPlugin harness;
     private final Plugin loreItems;
     private final Object scanner;
@@ -63,20 +69,21 @@ final class ShulkerDiscoveryProbe {
                 throw new IllegalStateException("Scan abandoned");
             }
             if (!(Boolean) value(result, "continuationRequired")) {
-                if (candidates.size() != 729) {
-                    throw new IllegalStateException("Expected 729 duplicate observations, got " + candidates.size());
+                if (candidates.size() != OBSERVATIONS_PER_WINDOW) {
+                    throw new IllegalStateException("Expected " + OBSERVATIONS_PER_WINDOW
+                            + " duplicate observations, got " + candidates.size());
                 }
                 candidates.clear();
                 completed++;
             }
-            if (completed == 20) {
+            if (completed == WINDOWS) {
                 durations.sort(Long::compareTo);
                 harness.getLogger().info("SHULKER_PROBE PASS windows=" + completed
-                        + " passes=" + passes + " observations_per_window=729"
+                        + " passes=" + passes + " observations_per_window=" + OBSERVATIONS_PER_WINDOW
                         + " p50_ms=" + percentile(0.50) + " p95_ms=" + percentile(0.95)
                         + " max_ms=" + percentile(1.0) + " server=" + Bukkit.getVersion()
                         + " java=" + System.getProperty("java.version"));
-            } else if (passes >= 1280) {
+            } else if (passes >= MAX_PASSES) {
                 throw new IllegalStateException("Probe exceeded continuation bound");
             } else {
                 Bukkit.getScheduler().runTask(harness, this::runPass);
