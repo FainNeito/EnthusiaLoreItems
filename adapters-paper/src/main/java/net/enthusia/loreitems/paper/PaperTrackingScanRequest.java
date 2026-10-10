@@ -35,6 +35,16 @@ record PaperTrackingScanRequest(
                 source);
     }
 
+    /**
+     * Only periodic reconciliation may be coalesced. Lifecycle-triggered scans
+     * have distinct evidence semantics and always retain their own queue slot.
+     */
+    ChunkReference periodicChunkKey() {
+        return "periodic-loaded-chunk".equals(source)
+                && presence == TrackingObservationUseCase.Presence.PRESENT
+                ? chunk : null;
+    }
+
     void run(Plugin plugin, PaperPhysicalTrackingListener listener) {
         if (playerId != null) {
             listener.scanPlayer(playerId, unique, source);
@@ -49,7 +59,7 @@ record PaperTrackingScanRequest(
         }
     }
 
-    private record ChunkReference(UUID worldId, int x, int z) {
+    record ChunkReference(UUID worldId, int x, int z) {
         private static ChunkReference capture(Chunk chunk) {
             return new ChunkReference(
                     chunk.getWorld().getUID(), chunk.getX(), chunk.getZ());

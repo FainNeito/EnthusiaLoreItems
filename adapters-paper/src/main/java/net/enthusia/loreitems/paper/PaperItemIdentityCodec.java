@@ -80,6 +80,11 @@ public final class PaperItemIdentityCodec implements ItemIdentityCodec<ItemStack
         if (item == null || item.getType().isAir()) {
             return false;
         }
+        // Ordinary items with no metadata cannot carry any persistent identity
+        // keys. Avoid materializing ItemMeta on the hot-path evidence probe.
+        if (!item.hasItemMeta()) {
+            return false;
+        }
         ItemMeta meta = item.getItemMeta();
         if (meta == null) {
             return false;
@@ -94,6 +99,13 @@ public final class PaperItemIdentityCodec implements ItemIdentityCodec<ItemStack
         Objects.requireNonNull(item, "item");
         if (item.getType().isAir()) {
             return invalid(ItemIdentityFailure.MALFORMED_DATA, "Air cannot carry lore-item identity");
+        }
+
+        // Identity is stored exclusively in ItemMeta PDC. A non-air stack
+        // without ItemMeta has no identity bytes to validate or decode.
+        // The primary-thread guard and malformed air behavior remain above.
+        if (!item.hasItemMeta()) {
+            return new ItemIdentityReadResult.Untracked();
         }
 
         ItemMeta meta = item.getItemMeta();

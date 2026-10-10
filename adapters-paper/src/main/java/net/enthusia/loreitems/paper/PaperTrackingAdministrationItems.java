@@ -127,6 +127,9 @@ final class PaperTrackingAdministrationItems {
                 "Persistence in flight: " + snapshot.inFlight(),
                 "Scan backlog: " + snapshot.scanBacklog(),
                 "Truncated bounded scans: " + snapshot.scanTruncated(),
+                "Player scans coalesced: " + snapshot.deferredPlayerScanCoalesced(),
+                "Periodic chunks coalesced: " + snapshot.periodicChunkScanCoalesced(),
+                "Deferred scheduler refusals: " + snapshot.deferredPlayerScanScheduleRejected(),
                 "Accepted/completed: " + snapshot.accepted() + '/' + snapshot.completed(),
                 "Rejected/failed/conflicts: " + snapshot.rejected() + '/'
                         + snapshot.failed() + '/' + snapshot.conflicts());

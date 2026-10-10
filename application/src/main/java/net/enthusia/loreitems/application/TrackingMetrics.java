@@ -15,6 +15,10 @@ public final class TrackingMetrics implements MetricsPort {
     private static final String FAILED = "tracking.failed";
     private static final String CONFLICTS = "tracking.conflicts";
     private static final String SCAN_TRUNCATED = "tracking.scan_truncated";
+    private static final String DEFERRED_PLAYER_SCAN_COALESCED = "tracking.deferred_player_scan_coalesced";
+    private static final String PERIODIC_CHUNK_SCAN_COALESCED = "tracking.periodic_chunk_scan_coalesced";
+    private static final String DEFERRED_PLAYER_SCAN_SCHEDULE_REJECTED =
+            "tracking.deferred_player_scan_schedule_rejected";
     private static final String PERSISTENCE_NANOS = "tracking.persistence_nanos";
 
     private final AtomicLong queued = new AtomicLong();
@@ -28,6 +32,9 @@ public final class TrackingMetrics implements MetricsPort {
     private final AtomicLong failed = new AtomicLong();
     private final AtomicLong conflicts = new AtomicLong();
     private final AtomicLong scanTruncated = new AtomicLong();
+    private final AtomicLong deferredPlayerScanCoalesced = new AtomicLong();
+    private final AtomicLong periodicChunkScanCoalesced = new AtomicLong();
+    private final AtomicLong deferredPlayerScanScheduleRejected = new AtomicLong();
     private final AtomicLong durationNanos = new AtomicLong();
 
     @Override
@@ -53,8 +60,17 @@ public final class TrackingMetrics implements MetricsPort {
             case FAILED -> failed.incrementAndGet();
             case CONFLICTS -> conflicts.incrementAndGet();
             case SCAN_TRUNCATED -> scanTruncated.incrementAndGet();
+            default -> incrementScanDiagnostics(name);
+        }
+    }
+
+    private void incrementScanDiagnostics(String name) {
+        switch (name) {
+            case DEFERRED_PLAYER_SCAN_COALESCED -> deferredPlayerScanCoalesced.incrementAndGet();
+            case PERIODIC_CHUNK_SCAN_COALESCED -> periodicChunkScanCoalesced.incrementAndGet();
+            case DEFERRED_PLAYER_SCAN_SCHEDULE_REJECTED -> deferredPlayerScanScheduleRejected.incrementAndGet();
             default -> {
-                // Metrics outside this phase are intentionally ignored by this focused port.
+                // Ignore unrelated metric names, preserving the existing contract.
             }
         }
     }
@@ -81,7 +97,10 @@ public final class TrackingMetrics implements MetricsPort {
                 failed.get(),
                 conflicts.get(),
                 scanTruncated.get(),
-                durationNanos.get());
+                durationNanos.get(),
+                deferredPlayerScanCoalesced.get(),
+                periodicChunkScanCoalesced.get(),
+                deferredPlayerScanScheduleRejected.get());
     }
 
     public record Snapshot(
@@ -94,7 +113,10 @@ public final class TrackingMetrics implements MetricsPort {
             long failed,
             long conflicts,
             long scanTruncated,
-            long persistenceNanos) {}
+            long persistenceNanos,
+            long deferredPlayerScanCoalesced,
+            long periodicChunkScanCoalesced,
+            long deferredPlayerScanScheduleRejected) {}
 
     private record AdditionalQueueMetrics(TrackingMetrics metrics) implements MetricsPort {
         @Override

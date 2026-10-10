@@ -63,6 +63,9 @@ jobs:
           white-list=false
           server-port=25565
           motd=WP05 editor contract acceptance
+          # The stationary bot must not be killed during held-item rollout checks.
+          difficulty=peaceful
+          spawn-monsters=false
           EOF
           cd "$ROOT/bot"
           npm init -y >/dev/null

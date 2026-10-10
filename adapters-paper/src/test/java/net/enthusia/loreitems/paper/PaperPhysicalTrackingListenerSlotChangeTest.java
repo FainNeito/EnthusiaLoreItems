@@ -1,9 +1,13 @@
 package net.enthusia.loreitems.paper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.papermc.paper.event.player.PlayerInventorySlotChangeEvent;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -26,6 +30,7 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
 import org.mockbukkit.mockbukkit.plugin.PluginMock;
 
 class PaperPhysicalTrackingListenerSlotChangeTest {
+    private static final String SLOT_CHANGE_SOURCE = "inventory-slot-change";
     private static final LoreItemIdentity IDENTITY = new LoreItemIdentity(
             new LoreDefinitionId(UUID.fromString(
                     "11111111-1111-1111-1111-111111111111")),
@@ -98,6 +103,111 @@ class PaperPhysicalTrackingListenerSlotChangeTest {
         assertEquals(1, observed.size());
     }
 
+    @Test
+    void repeatedSlotChangesScheduleOnlyOneScanPerPlayerAndTick() {
+        List<TrackingObservationUseCase.Request> observed = new CopyOnWriteArrayList<>();
+        listener = new PaperPhysicalTrackingListener(
+                plugin, () -> recordingUseCase(observed), () -> 4, MetricsPort.noOp());
+        PlayerMock player = server.addPlayer();
+        ItemStack tracked = trackedItem();
+        player.getInventory().setHelmet(tracked);
+        PlayerInventorySlotChangeEvent event = new PlayerInventorySlotChangeEvent(
+                player, 0, ItemStack.empty(), tracked);
+
+        for (int count = 0; count < 50; count++) {
+            listener.onSlotChange(event);
+        }
+
+        assertEquals(1, listener.pendingUniquePlayerScans());
+        server.getScheduler().performOneTick();
+        assertEquals(0, listener.pendingUniquePlayerScans());
+        assertCanonicalHelmetObservation(observed);
+
+        // The deduplication window ends when the scheduled action executes.
+        listener.onSlotChange(event);
+        assertEquals(1, listener.pendingUniquePlayerScans());
+        server.getScheduler().performOneTick();
+        assertEquals(0, listener.pendingUniquePlayerScans());
+    }
+
+    @Test
+    void differentPlayersAndEventSourcesAreNeverCoalescedTogether() {
+        listener = new PaperPhysicalTrackingListener(
+                plugin, () -> recordingUseCase(new CopyOnWriteArrayList<>()),
+                () -> 4, MetricsPort.noOp());
+        PlayerMock first = server.addPlayer();
+        PlayerMock second = server.addPlayer();
+
+        listener.schedulePlayerUnique(first.getUniqueId(), SLOT_CHANGE_SOURCE);
+        listener.schedulePlayerUnique(first.getUniqueId(), "player-respawn");
+        listener.schedulePlayerUnique(second.getUniqueId(), SLOT_CHANGE_SOURCE);
+        listener.schedulePlayerUnique(second.getUniqueId(), SLOT_CHANGE_SOURCE);
+
+        assertEquals(3, listener.pendingUniquePlayerScans());
+        server.getScheduler().performOneTick();
+        assertEquals(0, listener.pendingUniquePlayerScans());
+    }
+
+    @Test
+    void deferredSchedulerRejectsNewWorkAfterClose() {
+        PaperDeferredMainThreadActions actions = new PaperDeferredMainThreadActions(
+                plugin, "test scheduling refusal");
+        assertTrue(actions.schedule(() -> {}));
+        actions.close();
+        assertFalse(actions.schedule(() -> {}));
+    }
+
+    @Test
+    void burstCoalescingStillReportsBothCopiesOfTheSameTrackedIdentity() {
+        List<TrackingObservationUseCase.Request> observed = new CopyOnWriteArrayList<>();
+        listener = new PaperPhysicalTrackingListener(
+                plugin, () -> recordingUseCase(observed), () -> 4, MetricsPort.noOp());
+        PlayerMock player = server.addPlayer();
+        ItemStack item = trackedItem();
+        player.getInventory().setItem(5, item.clone());
+        player.getInventory().setHelmet(item.clone());
+        PlayerInventorySlotChangeEvent event = new PlayerInventorySlotChangeEvent(
+                player, 0, ItemStack.empty(), item);
+
+        for (int count = 0; count < 25; count++) {
+            listener.onSlotChange(event);
+        }
+        assertEquals(1, listener.pendingUniquePlayerScans());
+        server.getScheduler().performOneTick();
+
+        assertEquals(2, observed.size());
+        assertEquals(
+                Set.of("slot:5", "armor:3"),
+                observed.stream()
+                        .map(request -> request.location().containerPath())
+                        .collect(Collectors.toSet()));
+        assertTrue(observed.stream().allMatch(request ->
+                request.mode() == TrackingObservationUseCase.EvidenceMode.RECONCILIATION));
+    }
+
+    @Test
+    void shutdownDrainsCoalescedScansExactlyOnce() {
+        List<TrackingObservationUseCase.Request> observed = new CopyOnWriteArrayList<>();
+        listener = new PaperPhysicalTrackingListener(
+                plugin, () -> recordingUseCase(observed), () -> 4, MetricsPort.noOp());
+        PlayerMock player = server.addPlayer();
+        ItemStack tracked = trackedItem();
+        player.getInventory().setHelmet(tracked);
+        PlayerInventorySlotChangeEvent event = new PlayerInventorySlotChangeEvent(
+                player, 0, ItemStack.empty(), tracked);
+
+        for (int count = 0; count < 40; count++) {
+            listener.onSlotChange(event);
+        }
+        assertEquals(1, listener.pendingUniquePlayerScans());
+        listener.close();
+
+        assertEquals(0, listener.pendingUniquePlayerScans());
+        assertCanonicalHelmetObservation(observed);
+        server.getScheduler().performOneTick();
+        assertEquals(1, observed.size());
+    }
+
     private static TrackingObservationUseCase recordingUseCase(
             List<TrackingObservationUseCase.Request> observed) {
         return request -> {
@@ -123,6 +233,6 @@ class PaperPhysicalTrackingListenerSlotChangeTest {
         assertEquals(
                 TrackingObservationUseCase.EvidenceMode.AUTHORITATIVE_TRANSITION,
                 request.mode());
-        assertEquals("inventory-slot-change", request.source());
+        assertEquals(SLOT_CHANGE_SOURCE, request.source());
     }
 }

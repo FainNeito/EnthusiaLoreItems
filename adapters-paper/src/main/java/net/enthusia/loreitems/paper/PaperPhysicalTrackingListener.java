@@ -62,7 +62,9 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
     private final PaperDeferredMainThreadActions deferredActions;
     private final PaperBlockInventoryTracking blockInventoryTracking;
     private final Queue<PaperTrackingScanRequest> scans = new ArrayDeque<>();
+    private final PaperPeriodicChunkScanKeys periodicChunkKeys = new PaperPeriodicChunkScanKeys();
     private final Set<UUID> deathDrops = new HashSet<>();
+    private final PaperPlayerScanCoalescer pendingPlayerScans;
 
     private BukkitTask scanTask;
     private BukkitTask seedTask;
@@ -88,6 +90,8 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
         this.deferredActions = new PaperDeferredMainThreadActions(
                 plugin,
                 "Could not schedule lore-item tracking during shutdown.");
+        this.pendingPlayerScans = new PaperPlayerScanCoalescer(
+                deferredActions, metrics, (id, source) -> scanPlayer(id, true, source));
         this.blockInventoryTracking = new PaperBlockInventoryTracking(
                 plugin, scanner, deferredActions, MAX_ITEMS_PER_SCAN);
         currentBudget();
@@ -289,8 +293,14 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
         }
     }
 
-    private void schedulePlayerUnique(UUID playerId, String source) {
-        scheduleNextTick(() -> scanPlayer(playerId, true, source));
+    void schedulePlayerUnique(UUID playerId, String source) {
+        if (!closed) {
+            pendingPlayerScans.schedule(playerId, source);
+        }
+    }
+
+    int pendingUniquePlayerScans() {
+        return pendingPlayerScans.size();
     }
 
     private void drain() {
@@ -300,6 +310,7 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
             if (request == null) {
                 break;
             }
+            periodicChunkKeys.release(request);
             request.run(plugin, this);
         }
         if (scans.isEmpty() && scanSaturated) {
@@ -355,12 +366,14 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
         seededChunks = EMPTY_CHUNKS;
     }
 
-    private void enqueue(PaperTrackingScanRequest request) {
-        if (closed) {
+    void enqueue(PaperTrackingScanRequest request) {
+        Objects.requireNonNull(request, "request");
+        if (closed || !periodicChunkKeys.tryRegister(request, metrics)) {
             return;
         }
         int maximum = maxQueuedScans();
         if (scans.size() >= maximum) {
+            periodicChunkKeys.release(request);
             metrics.increment("tracking.rejected");
             reportScanSaturation();
             return;
@@ -369,6 +382,14 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
         if (scans.size() == maximum) {
             reportScanSaturation();
         }
+    }
+
+    int queuedScanCount() {
+        return scans.size();
+    }
+
+    int queuedPeriodicChunkCount() {
+        return periodicChunkKeys.size();
     }
 
     private void reportScanSaturation() {
@@ -512,7 +533,9 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
             seedTask.cancel();
         }
         deferredActions.close();
+        pendingPlayerScans.clear();
         scans.clear();
+        periodicChunkKeys.clear();
         deathDrops.clear();
         scanSaturated = false;
         coordinator.close();

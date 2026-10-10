@@ -58,11 +58,15 @@ record PaperTemplateUpdateItemReference(
     @Override
     public Optional<Resolved> resolve(Plugin plugin) {
         Objects.requireNonNull(plugin, "plugin");
-        Optional<Inventory> resolvedInventory = inventoryReference.resolve(plugin);
-        if (resolvedInventory.isEmpty()) {
-            return Optional.empty();
-        }
-        Inventory inventory = resolvedInventory.orElseThrow();
+        return inventoryReference.resolve(plugin).flatMap(this::resolveIn);
+    }
+
+    /**
+     * Discovery-only resolution against the inventory already opened for this scan pass.
+     * Mutation-time reads must still call resolve(plugin) to revalidate the live location.
+     */
+    Optional<Resolved> resolveIn(Inventory inventory) {
+        Objects.requireNonNull(inventory, "inventory");
         if (rootSlot >= inventory.getSize()) {
             return Optional.empty();
         }

@@ -296,10 +296,13 @@ final class PaperPhysicalInventoryScanner {
             return;
         }
         submitItem(item, location, context.presence(), context.mode(), context.source());
-        if (depth >= MAX_NESTING_DEPTH || !collector.hasNestedIdentityEvidence(item)) {
+        if (depth >= MAX_NESTING_DEPTH) {
             return;
         }
-        scanNested(item.getItemMeta(), location, context, depth, limit);
+        ItemMeta nestedMeta = collector.nestedMetaWithIdentityEvidence(item);
+        if (nestedMeta != null) {
+            scanNested(nestedMeta, location, context, depth, limit);
+        }
     }
 
     private void scanNested(

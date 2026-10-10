@@ -88,13 +88,19 @@ final class PaperCreativeIdentityProtection {
         if (!hasIdentityEvidenceInTree(first) || !hasIdentityEvidenceInTree(second)) {
             return false;
         }
+        // Bukkit isSimilar intentionally ignores stack amount. A creative packet
+        // changing the count must never be treated as a physical relocation,
+        // including when tracked identities are nested inside containers.
+        if (first.getAmount() != second.getAmount()) {
+            return false;
+        }
         var before = identityCodec.readIdentity(first);
         var after = identityCodec.readIdentity(second);
         if (before instanceof net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked a
                 && after instanceof net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked b) {
-            return first.getType() == second.getType()
-                    && first.getAmount() == second.getAmount()
-                    && a.identity().equals(b.identity());
+            // UUID identity alone is not proof that a creative set-slot packet
+            // preserved the item. Reject unauthorized lore/enchant/PDC edits.
+            return a.identity().equals(b.identity()) && first.isSimilar(second);
         }
         return first.isSimilar(second);
     }

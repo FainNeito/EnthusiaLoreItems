@@ -29,6 +29,10 @@ import org.bukkit.entity.GlowItemFrame;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.BlockStateMeta;
@@ -46,7 +50,7 @@ import org.bukkit.plugin.java.JavaPlugin;
  * outside the helper so they remain independent of LoreItems internals.
  */
 @SuppressWarnings("PMD.AvoidLiteralsInIfCondition")
-public final class WP05AcceptanceHarnessPlugin extends JavaPlugin {
+public final class WP05AcceptanceHarnessPlugin extends JavaPlugin implements Listener {
     private static final String PERMISSION = "wp05.acceptance";
     private static final String ENTITY_MARKER = "wp05-acceptance";
     private static final NamespacedKey VERSION_KEY = key("identity_version");
@@ -63,6 +67,7 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         Objects.requireNonNull(getCommand("wp05accept"), "wp05accept command").setExecutor(this);
+        getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("WP-05 deterministic acceptance helper is active; never ship this jar.");
     }
 
@@ -105,8 +110,42 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin {
                 Map.entry("damage", this::damage),
                 Map.entry("api", this::api),
                 Map.entry("dump", this::dump),
+                Map.entry("chunkstatus", this::chunkStatus),
+                Map.entry("shulkerprobe", (sender, ignored) -> ShulkerDiscoveryProbe.start(this)),
                 Map.entry("view", this::view),
                 Map.entry("cleanup", (sender, ignored) -> cleanup(sender)));
+    }
+
+    /** Read-only observation of the local-container chunks in the disposable rollout world. */
+    private void chunkStatus(CommandSender sender, String[] arguments) {
+        requireLength(arguments, 1, "chunkstatus");
+        World world = Objects.requireNonNull(Bukkit.getWorld("world"), "acceptance world");
+        getLogger().info("WP05_ACCEPT CHUNK_STATUS world=" + world.getName()
+                + " chest_0_0=" + world.isChunkLoaded(0, 0)
+                + " nested_1_0=" + world.isChunkLoaded(1, 0));
+        for (int x = 0; x <= 1; x++) {
+            if (world.isChunkLoaded(x, 0)) {
+                org.bukkit.Chunk chunk = world.getChunkAt(x, 0);
+                getLogger().info("WP05_ACCEPT CHUNK_TICKETS chunk_x=" + x
+                        + " forced=" + chunk.isForceLoaded()
+                        + " plugins=" + chunk.getPluginChunkTickets().stream()
+                                .map(org.bukkit.plugin.Plugin::getName).toList());
+            }
+        }
+        sender.sendMessage("WP05_ACCEPT CHUNK_STATUS recorded");
+    }
+
+    /** Observe actual unload events rather than assuming a teleport unloaded chunks. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkUnload(ChunkUnloadEvent event) {
+        if (!"world".equals(event.getWorld().getName()) || event.getChunk().getZ() != 0) {
+            return;
+        }
+        int x = event.getChunk().getX();
+        if (x == 0 || x == 1) {
+            getLogger().info("WP05_ACCEPT CHUNK_UNLOAD world=" + event.getWorld().getName()
+                    + " chunk_x=" + x + " chunk_z=0");
+        }
     }
 
     private void source(CommandSender sender, String[] arguments) {

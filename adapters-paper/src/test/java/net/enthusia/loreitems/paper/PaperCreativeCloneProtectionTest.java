@@ -106,7 +106,8 @@ class PaperCreativeCloneProtectionTest {
         listener.onCreativeInventoryMutation(injection);
         assertTrue(injection.isCancelled());
 
-        inventory.setItem(0, trackedItem());
+        ItemStack original = trackedItem();
+        inventory.setItem(0, original);
         InventoryCreativeEvent removal = new InventoryCreativeEvent(
                 player.getOpenInventory(),
                 InventoryType.SlotType.CONTAINER,
@@ -120,13 +121,14 @@ class PaperCreativeCloneProtectionTest {
         listener.onCreativeInventoryMutation(removal);
         assertFalse(removal.isCancelled());
 
-        // Clearing the source permits exactly one matching placement.
+        // A real relocation carries the actual source item and all its
+        // metadata; a newly forged stack with just the UUID is not equivalent.
         inventory.setItem(0, ItemStack.empty());
         InventoryCreativeEvent placement = new InventoryCreativeEvent(
                 player.getOpenInventory(),
                 InventoryType.SlotType.CONTAINER,
                 1,
-                trackedItem());
+                original.clone());
         listener.onCreativeInventoryMutation(placement);
         assertFalse(placement.isCancelled());
 
@@ -134,7 +136,7 @@ class PaperCreativeCloneProtectionTest {
                 player.getOpenInventory(),
                 InventoryType.SlotType.CONTAINER,
                 2,
-                trackedItem());
+                original.clone());
         listener.onCreativeInventoryMutation(replay);
         assertTrue(replay.isCancelled());
 
@@ -147,6 +149,133 @@ class PaperCreativeCloneProtectionTest {
                 trackedItem());
         listener.onCreativeInventoryMutation(cursorInjection);
         assertTrue(cursorInjection.isCancelled());
+    }
+
+    @Test
+    void creativePacketCannotAlterMetadataWhileKeepingTrackedIdentity() {
+        Inventory inventory = server.createInventory(null, 9);
+        player.openInventory(inventory);
+        ItemStack original = trackedItem();
+        ItemStack modified = original.clone();
+        var modifiedMeta = modified.getItemMeta();
+        modifiedMeta.setUnbreakable(true);
+        assertTrue(modified.setItemMeta(modifiedMeta));
+
+        // Same-slot replacement cannot bypass protection using a matching UUID.
+        inventory.setItem(0, original);
+        InventoryCreativeEvent sameSlotEdit = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                0,
+                modified);
+        listener.onCreativeInventoryMutation(sameSlotEdit);
+        assertTrue(sameSlotEdit.isCancelled());
+
+        // Nor may a valid movement credit authorize rewriting item metadata.
+        InventoryCreativeEvent removal = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                0,
+                ItemStack.empty());
+        listener.onCreativeInventoryMutation(removal);
+        assertFalse(removal.isCancelled());
+        inventory.setItem(0, ItemStack.empty());
+
+        InventoryCreativeEvent modifiedPlacement = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                1,
+                modified);
+        listener.onCreativeInventoryMutation(modifiedPlacement);
+        assertTrue(modifiedPlacement.isCancelled());
+
+        InventoryCreativeEvent replay = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                2,
+                original);
+        listener.onCreativeInventoryMutation(replay);
+        assertTrue(replay.isCancelled());
+    }
+
+    @Test
+    void creativePacketCannotIncreaseTrackedStackAmountWithSameIdentity() {
+        Inventory inventory = server.createInventory(null, 9);
+        player.openInventory(inventory);
+        ItemStack original = trackedItem();
+        inventory.setItem(0, original);
+
+        ItemStack inflated = original.clone();
+        inflated.setAmount(2);
+        InventoryCreativeEvent sameSlot = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                0,
+                inflated);
+        listener.onCreativeInventoryMutation(sameSlot);
+        assertTrue(sameSlot.isCancelled());
+
+        InventoryCreativeEvent removal = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                0,
+                ItemStack.empty());
+        listener.onCreativeInventoryMutation(removal);
+        assertFalse(removal.isCancelled());
+        inventory.setItem(0, ItemStack.empty());
+
+        InventoryCreativeEvent inflatedPlacement = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                1,
+                inflated);
+        listener.onCreativeInventoryMutation(inflatedPlacement);
+        assertTrue(inflatedPlacement.isCancelled());
+
+        // A failed placement must consume the credit; the real item cannot
+        // be replayed later to disguise the attempted creative duplication.
+        InventoryCreativeEvent replay = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                2,
+                original.clone());
+        listener.onCreativeInventoryMutation(replay);
+        assertTrue(replay.isCancelled());
+    }
+
+    @Test
+    void creativePacketCannotIncreaseAmountOfContainerWithNestedTrackedIdentity() {
+        Inventory inventory = server.createInventory(null, 9);
+        player.openInventory(inventory);
+        ItemStack original = shulkerContaining(trackedItem());
+        inventory.setItem(0, original);
+
+        ItemStack inflated = original.clone();
+        inflated.setAmount(2);
+        InventoryCreativeEvent sameSlot = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                0,
+                inflated);
+        listener.onCreativeInventoryMutation(sameSlot);
+        assertTrue(sameSlot.isCancelled());
+
+        InventoryCreativeEvent removal = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                0,
+                ItemStack.empty());
+        listener.onCreativeInventoryMutation(removal);
+        assertFalse(removal.isCancelled());
+        inventory.setItem(0, ItemStack.empty());
+
+        InventoryCreativeEvent inflatedPlacement = new InventoryCreativeEvent(
+                player.getOpenInventory(),
+                InventoryType.SlotType.CONTAINER,
+                1,
+                inflated);
+        listener.onCreativeInventoryMutation(inflatedPlacement);
+        assertTrue(inflatedPlacement.isCancelled());
     }
 
     @Test

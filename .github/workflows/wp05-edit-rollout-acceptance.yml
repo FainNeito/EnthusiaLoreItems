@@ -119,13 +119,43 @@ jobs:
           stop_bot(){ local n="$1" q p;q="$(printf '%s' "$n"|tr '[:upper:]' '[:lower:]')";test -f "$R/$q.pid"||return 0;p="$(cat "$R/$q.pid")";touch "$R/$q.stop";for _ in $(seq 1 50);do kill -0 "$p" 2>/dev/null||break;sleep .2;done;kill "$p" 2>/dev/null||true;wait "$p" 2>/dev/null||true;rm -f "$R/$q.pid";}
           kill_bots(){ for f in "$R"/*.pid;do test -e "$f"||continue;p="$(cat "$f")";kill "$p" 2>/dev/null||true;wait "$p" 2>/dev/null||true;rm -f "$f";done;}
           wait_marker(){ local f="$1" n="${2:-240}";for _ in $(seq 1 "$n");do test -f "$R/wp05rollout.failed"&&{ cat "$R/wp05rollout.failed";return 1;};test -f "$R/$f"&&return;sleep .25;done;echo "marker timeout $f" >&2;return 1;}
+          # On a failed SQL wait, preserve synthetic durable-observation state so
+          # an intermittent chunk-unload timeout can be investigated without
+          # weakening the assertion or changing production plugin behavior.
+          dump_rollout_state(){
+            python3 - "$DB" "${DEF:-}" > "$E/sql-timeout-state.json" <<'PY' || true
+          import json,sqlite3,sys
+          result={'definition_id':sys.argv[2] or None}
+          try:
+              with sqlite3.connect(sys.argv[1],timeout=2) as conn:
+                  conn.row_factory=sqlite3.Row
+                  if sys.argv[2]:
+                      query='''select i.instance_id, i.applied_revision, i.desired_revision,
+                          s.state, s.location_type, s.location_key, s.container_path
+                          from lore_instances i
+                          left join instance_current_state s on s.instance_id=i.instance_id
+                          where i.definition_id=? order by i.instance_id'''
+                      result['instances']=[dict(row) for row in conn.execute(query,(sys.argv[2],))]
+                      result['state_counts']=[dict(row) for row in conn.execute(
+                          '''select s.location_type, s.state, count(*) as total
+                             from instance_current_state s
+                             join lore_instances i on i.instance_id=s.instance_id
+                             where i.definition_id=?
+                             group by s.location_type, s.state
+                             order by s.location_type, s.state''',(sys.argv[2],))]
+                  result['integrity_check']=conn.execute('pragma integrity_check').fetchone()[0]
+          except (sqlite3.Error, OSError) as error:
+              result['error']=str(error)
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+          }
           wait_sql(){ local q="$1" n="${2:-720}";for _ in $(seq 1 "$n");do if python3 - "$DB" "$q" <<'PY'
           import sqlite3,sys
           try:
               with sqlite3.connect(sys.argv[1]) as c:r=c.execute(sys.argv[2]).fetchone();raise SystemExit(0 if r and r[0] else 1)
           except sqlite3.OperationalError:raise SystemExit(1)
           PY
-            then return;fi;sleep .25;done;echo "SQL timeout $q" >&2;return 1;}
+            then return;fi;sleep .25;done;echo "SQL timeout $q" >&2;dump_rollout_state;echo "wp05accept chunkstatus" >&3;return 1;}
           wait_main_item(){ wait_sql "select count(*)=1 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type='PLAYER_INVENTORY' and s.location_key='player:$U'";}
           give_main(){ echo 'loreitems give rollout_item Wp05Rollout' >&3;wait_main_item;}
           START="$(date -u +%FT%TZ)";L1="$E/server-initial.log";start_server "$L1";start_bot Wp05Rollout;U="$(tr -d '\r\n'<"$R/wp05rollout.uuid")";echo 'op Wp05Rollout' >&3;echo 'effect give Wp05Rollout minecraft:slow_falling 600 0 true' >&3;echo 'tp Wp05Rollout 0 201 0' >&3;echo 'setworldspawn 0 200 0' >&3
@@ -137,7 +167,7 @@ jobs:
           touch "$R/go-chest";wait_marker chest.done;wait_sql "select count(*)=1 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type='BLOCK_CONTAINER' and s.state='CONFIRMED_NOW'"
           give_main;echo 'wp05accept place Wp05Rollout shulker' >&3;touch "$R/go-shulker";wait_marker shulker.done
           give_main;echo 'wp05accept place Wp05Rollout bundle' >&3;touch "$R/go-bundle";wait_marker bundle.done;echo 'setworldspawn 512 200 512' >&3
-          touch "$R/go-local-away";wait_marker local-away.done;wait_sql "select count(*)=3 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type in ('BLOCK_CONTAINER','NESTED_CONTAINER') and s.state='LAST_CONFIRMED'"
+          touch "$R/go-local-away";wait_marker local-away.done;echo "wp05accept chunkstatus" >&3;wait_sql "select count(*)=3 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type in ('BLOCK_CONTAINER','NESTED_CONTAINER') and s.state='LAST_CONFIRMED'"
           touch "$R/go-local-return";wait_marker local-return.done;wait_sql "select count(*)=1 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type='BLOCK_CONTAINER' and s.state='CONFIRMED_NOW'";wait_sql "select count(*)=2 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type='NESTED_CONTAINER' and s.state='CONFIRMED_NOW'"
           give_main;echo 'setblock 72 201 1 minecraft:stone' >&3;echo 'summon minecraft:item_frame 72 201 0 {Facing:2b,Tags:["wp05-rollout"]}' >&3;touch "$R/go-frame";wait_marker frame.done;wait_sql "select count(*)=1 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type='ITEM_FRAME'"
           give_main;echo 'setblock 74 201 1 minecraft:stone' >&3;echo 'summon minecraft:glow_item_frame 74 201 0 {Facing:2b,Tags:["wp05-rollout"]}' >&3;touch "$R/go-glow";wait_marker glow.done;wait_sql "select count(*)=2 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type='ITEM_FRAME'"

@@ -19,6 +19,10 @@ class TrackingMetricsTest {
         additional.increment("tracking.accepted");
         additional.increment("tracking.failed");
         metrics.increment("tracking.scan_truncated");
+        metrics.increment("tracking.deferred_player_scan_coalesced");
+        additional.increment("tracking.deferred_player_scan_coalesced");
+        metrics.increment("tracking.periodic_chunk_scan_coalesced");
+        additional.increment("tracking.deferred_player_scan_schedule_rejected");
         additional.recordDurationNanos("tracking.persistence_nanos", 11L);
 
         TrackingMetrics.Snapshot snapshot = metrics.snapshot();
@@ -29,5 +33,8 @@ class TrackingMetricsTest {
         assertEquals(1L, snapshot.failed());
         assertEquals(1L, snapshot.scanTruncated());
         assertEquals(11L, snapshot.persistenceNanos());
+        assertEquals(2L, snapshot.deferredPlayerScanCoalesced());
+        assertEquals(1L, snapshot.periodicChunkScanCoalesced());
+        assertEquals(1L, snapshot.deferredPlayerScanScheduleRejected());
     }
 }

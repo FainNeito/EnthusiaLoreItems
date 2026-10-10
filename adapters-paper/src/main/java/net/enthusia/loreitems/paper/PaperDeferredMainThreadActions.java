@@ -28,10 +28,11 @@ final class PaperDeferredMainThreadActions implements AutoCloseable {
         this.rejectionMessage = Objects.requireNonNull(rejectionMessage, "rejectionMessage");
     }
 
-    void schedule(Runnable action) {
+    /** True only if this action was actually accepted by the Bukkit scheduler. */
+    boolean schedule(Runnable action) {
         Objects.requireNonNull(action, "action");
         if (closing || closed) {
-            return;
+            return false;
         }
         PendingAction pendingAction = new PendingAction(action);
         pending.add(pendingAction);
@@ -39,9 +40,11 @@ final class PaperDeferredMainThreadActions implements AutoCloseable {
             plugin.getServer().getScheduler().runTask(
                     plugin,
                     () -> execute(pendingAction));
+            return true;
         } catch (RuntimeException exception) {
             pending.remove(pendingAction);
             plugin.getLogger().log(Level.FINE, rejectionMessage, exception);
+            return false;
         }
     }
 

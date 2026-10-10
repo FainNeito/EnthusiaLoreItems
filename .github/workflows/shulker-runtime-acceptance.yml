@@ -1,0 +1,79 @@
+name: Shulker Paper 26.2 Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shulker-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shulker-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: "8.14.3"
+      - name: Build isolated acceptance artifacts
+        run: gradle --no-daemon :plugin:shadowJar :acceptance-harness:jar
+      - uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Run bounded nested discovery on production runtime version
+        env:
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/shulker-runtime
+          mkdir -p "$ROOT/server/plugins" "$ROOT/evidence"
+          cp plugin/build/libs/plugin-1.0.1.jar "$ROOT/server/plugins/EnthusiaLoreItems.jar"
+          cp acceptance-harness/build/libs/acceptance-harness-1.0.1.jar "$ROOT/server/plugins/WP05AcceptanceHarness.jar"
+          sha256sum "$ROOT/server/plugins/"*.jar > "$ROOT/evidence/artifact-sha256.txt"
+          printf '%s\n' "$SOURCE_HEAD" > "$ROOT/evidence/source-head.txt"
+          java -version 2> "$ROOT/evidence/java-version.txt"
+          cd "$ROOT/server"
+          curl -fsSL https://fill-data.papermc.io/v1/objects/b1d8f6bfa1b6101fa8e947b53041cb3bdf5540e7b83b6547ca19ba7edefeb083/paper-26.2-129.jar -o paper.jar
+          echo 'b1d8f6bfa1b6101fa8e947b53041cb3bdf5540e7b83b6547ca19ba7edefeb083  paper.jar' | sha256sum -c -
+          printf 'eula=true\n' > eula.txt
+          printf 'server-ip=127.0.0.1\nserver-port=25576\nonline-mode=false\nview-distance=2\nsimulation-distance=2\ngenerate-structures=false\n' > server.properties
+          mkfifo server.stdin
+          exec 3<>server.stdin
+          java -Xms512M -Xmx1536M -Dpaper.disablePluginRemapping=true -jar paper.jar --nogui <server.stdin > "$ROOT/evidence/server.log" 2>&1 &
+          PID=$!
+          trap 'echo stop >&3; wait "$PID" || true' EXIT
+          wait_log() {
+            for _ in $(seq 1 240); do
+              if grep -q "$1" "$ROOT/evidence/server.log"; then return; fi
+              kill -0 "$PID"
+              if grep -q 'SHULKER_PROBE FAIL' "$ROOT/evidence/server.log"; then return 1; fi
+              sleep .5
+            done
+            tail -100 "$ROOT/evidence/server.log"
+            return 1
+          }
+          wait_log 'Done ('
+          wait_log 'Physical lore-item tracking and natural-access reconciliation are active'
+          echo 'wp05accept shulkerprobe' >&3
+          wait_log 'SHULKER_PROBE PASS windows=20 passes=60 observations_per_window=729'
+          grep 'SHULKER_PROBE PASS' "$ROOT/evidence/server.log" > "$ROOT/evidence/result.txt"
+      - name: Preserve runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: shulker-runtime-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/shulker-runtime/evidence
+          if-no-files-found: error
+          retention-days: 30

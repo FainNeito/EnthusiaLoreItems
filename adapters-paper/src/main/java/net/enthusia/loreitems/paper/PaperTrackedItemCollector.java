@@ -48,14 +48,17 @@ final class PaperTrackedItemCollector {
             return;
         }
         collectIdentity(item, type, key, path, observations);
-        if (depth < MAX_NESTING_DEPTH && hasNestedIdentityEvidence(item)) {
-            collectNested(
-                    item.getItemMeta(),
-                    nestedLocationKey(type, key),
-                    path,
-                    observations,
-                    depth,
-                    limit);
+        if (depth < MAX_NESTING_DEPTH) {
+            ItemMeta nestedMeta = nestedMetaWithIdentityEvidence(item);
+            if (nestedMeta != null) {
+                collectNested(
+                        nestedMeta,
+                        nestedLocationKey(type, key),
+                        path,
+                        observations,
+                        depth,
+                        limit);
+            }
         }
     }
 
@@ -74,22 +77,25 @@ final class PaperTrackedItemCollector {
     }
 
     boolean hasNestedIdentityEvidence(ItemStack item) {
-        if (item == null || item.getType().isAir()) {
-            return false;
+        return nestedMetaWithIdentityEvidence(item) != null;
+    }
+
+    /** Returns the metadata snapshot used to prove nested identity evidence. */
+    ItemMeta nestedMetaWithIdentityEvidence(ItemStack item) {
+        // Preserve the metadata-free shortcut while avoiding a second snapshot
+        // for nested shulker/bundle traversal after identity discovery.
+        if (item == null || item.getType().isAir() || !item.hasItemMeta()) {
+            return null;
         }
         ItemMeta meta = item.getItemMeta();
         if (meta instanceof BlockStateMeta blockMeta
                 && hasIdentityEvidence(blockMeta.getBlockState(), 0)) {
-            return true;
+            return meta;
         }
-        if (meta instanceof BundleMeta bundle) {
-            for (ItemStack nested : bundle.getItems()) {
-                if (hasIdentityEvidence(nested, 1)) {
-                    return true;
-                }
-            }
+        if (meta instanceof BundleMeta bundle && bundleHasIdentityEvidence(bundle, 0)) {
+            return meta;
         }
-        return false;
+        return null;
     }
 
     static String nestedLocationKey(LocationDescriptor.Type parentType, String locationKey) {
@@ -109,6 +115,7 @@ final class PaperTrackedItemCollector {
             return true;
         }
         return depth < MAX_NESTING_DEPTH
+                && item.hasItemMeta()
                 && hasNestedIdentityEvidence(item.getItemMeta(), depth);
     }
 

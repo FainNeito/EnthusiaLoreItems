@@ -71,6 +71,10 @@ jobs:
           motd=WP05 anomaly contract acceptance
           view-distance=4
           simulation-distance=4
+          # This is a six-minute anomaly warning/lifecycle fixture; hostile mobs
+          # must not kill the stationary test client and empty its inventory.
+          difficulty=peaceful
+          spawn-monsters=false
           EOF
 
           cd "$ROOT/bot"

@@ -4,20 +4,14 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import net.enthusia.loreitems.application.ItemIdentityReadResult;
 import net.enthusia.loreitems.application.LoreItemIdentity;
-import org.bukkit.block.BlockState;
-import org.bukkit.block.ShulkerBox;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.BlockStateMeta;
-import org.bukkit.inventory.meta.BundleMeta;
-import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.Plugin;
 
 /** Bounded main-thread discovery of tracked items in one inventory tree. */
@@ -46,7 +40,7 @@ class PaperTemplateUpdateScanner {
         ScanCursor cursor = cursors.computeIfAbsent(
                 inventoryReference,
                 ignored -> createCursor(inventoryReference, inventory));
-        boolean overflowed = processPass(plugin, cursor);
+        boolean overflowed = processPass(inventory, cursor);
         cursor.incrementContinuationPasses();
         if (overflowed
                 || (!cursor.pendingNodes().isEmpty()
@@ -90,17 +84,16 @@ class PaperTemplateUpdateScanner {
         return cursor;
     }
 
-    private boolean processPass(Plugin plugin, ScanCursor cursor) {
+    private boolean processPass(Inventory inventory, ScanCursor cursor) {
+        PaperTemplateUpdateDiscoveryPass discovery = new PaperTemplateUpdateDiscoveryPass(inventory);
         int processed = 0;
         while (processed < MAX_ITEMS_PER_PASS && !cursor.pendingNodes().isEmpty()) {
             ScanNode node = cursor.pendingNodes().remove();
-            Optional<PaperTemplateUpdateItemReference.Resolved> resolved =
-                    node.reference().resolve(plugin);
-            if (resolved.isPresent()) {
-                ItemStack item = resolved.orElseThrow().originalItem();
+            ItemStack item = discovery.read(node.reference());
+            if (item != null && !item.getType().isAir()) {
                 cursor.observe(readCandidate(item, node.reference()));
                 if (node.depth() < MAX_NESTING_DEPTH
-                        && enqueueChildren(cursor.pendingNodes(), node, item)) {
+                        && enqueueChildren(cursor.pendingNodes(), node, discovery)) {
                     return true;
                 }
             }
@@ -119,67 +112,19 @@ class PaperTemplateUpdateScanner {
         return null;
     }
 
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
     private static boolean enqueueChildren(
             Queue<ScanNode> pendingNodes,
             ScanNode parent,
-            ItemStack item) {
-        ItemMeta meta = item.getItemMeta();
-        return enqueueShulker(pendingNodes, parent, meta)
-                || enqueueBundle(pendingNodes, parent, meta);
-    }
-
-    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
-    private static boolean enqueueShulker(
-            Queue<ScanNode> pendingNodes,
-            ScanNode parent,
-            ItemMeta meta) {
-        if (!(meta instanceof BlockStateMeta blockMeta)) {
-            return false;
-        }
-        BlockState state = Objects.requireNonNull(
-                blockMeta.getBlockState(), "shulker block state");
-        if (!(state instanceof ShulkerBox shulker)) {
-            return false;
-        }
-        Inventory nestedInventory = Objects.requireNonNull(
-                shulker.getInventory(), "shulker inventory");
-        ItemStack[] contents = Objects.requireNonNull(
-                nestedInventory.getContents(), "shulker inventory contents");
-        for (int slot = 0; slot < contents.length; slot++) {
-            ItemStack nested = contents[slot];
+            PaperTemplateUpdateDiscoveryPass discovery) {
+        PaperTemplateUpdateDiscoveryPass.NestedContents contents =
+                discovery.children(parent.reference());
+        for (int index = 0; index < contents.items().size(); index++) {
+            ItemStack nested = contents.items().get(index);
             if (nested != null && !nested.getType().isAir()
-                    && !enqueue(
-                            pendingNodes,
-                            new ScanNode(
-                                    parent.reference().nested(
-                                            PaperTemplateUpdateItemReference.NestedStep
-                                                    .shulker(slot)),
-                                    parent.depth() + 1))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
-    private static boolean enqueueBundle(
-            Queue<ScanNode> pendingNodes,
-            ScanNode parent,
-            ItemMeta meta) {
-        if (!(meta instanceof BundleMeta bundle)) {
-            return false;
-        }
-        List<ItemStack> items = bundle.getItems();
-        for (int index = 0; index < items.size(); index++) {
-            ItemStack nested = items.get(index);
-            if (nested != null && !nested.getType().isAir()
-                    && !enqueue(
-                            pendingNodes,
-                            new ScanNode(
-                                    parent.reference().nested(
-                                            PaperTemplateUpdateItemReference.NestedStep
-                                                    .bundle(index)),
-                                    parent.depth() + 1))) {
+                    && !enqueue(pendingNodes, new ScanNode(
+                            parent.reference().nested(new PaperTemplateUpdateItemReference.NestedStep(
+                                    contents.kind(), index)), parent.depth() + 1))) {
                 return true;
             }
         }

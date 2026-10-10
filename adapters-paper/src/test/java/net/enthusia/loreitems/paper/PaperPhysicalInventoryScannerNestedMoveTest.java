@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -20,6 +22,7 @@ import org.bukkit.block.ShulkerBox;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BlockStateMeta;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -102,6 +105,84 @@ class PaperPhysicalInventoryScannerNestedMoveTest {
         assertEquals(
                 List.of("slot:0/shulker:0", "slot:9/shulker:26"),
                 observed.stream().map(request -> request.location().containerPath()).toList());
+    }
+
+    @Test
+    void nestedCollectorReusesIdentityConfirmedMetadataSnapshot() {
+        CountingShulkerItem item = countingShulkerContaining(trackedItem());
+        Map<LoreItemIdentity, List<LocationDescriptor>> observations = new ConcurrentHashMap<>();
+
+        new PaperTrackedItemCollector().collectItem(
+                item,
+                LocationDescriptor.Type.BLOCK_CONTAINER,
+                "minecraft:overworld:10:64:10",
+                "slot:0",
+                observations,
+                0,
+                new PaperScanLimit(256));
+
+        // Once for root identity decoding and once for nested evidence.
+        // Previously a third snapshot was taken during nested collection.
+        assertEquals(2, item.metadataReads());
+        assertEquals(1, observations.get(IDENTITY).size());
+        assertEquals(
+                "slot:0/shulker:0",
+                observations.get(IDENTITY).getFirst().containerPath());
+    }
+
+    @Test
+    void physicalNestedScanReusesIdentityConfirmedMetadataSnapshot() {
+        List<TrackingObservationUseCase.Request> observed = new CopyOnWriteArrayList<>();
+        PaperPhysicalInventoryScanner scanner = scanner(observed);
+        CountingShulkerItem item = countingShulkerContaining(trackedItem());
+        scanner.scanItemTree(
+                item,
+                new LocationDescriptor(
+                        LocationDescriptor.Type.BLOCK_CONTAINER,
+                        "minecraft:overworld:10:64:10",
+                        "slot:0"),
+                TrackingObservationUseCase.Presence.PRESENT,
+                TrackingObservationUseCase.EvidenceMode.RECONCILIATION,
+                "nested-snapshot-regression",
+                new PaperScanLimit(256));
+
+        assertEquals(2, item.metadataReads());
+        assertEquals(1, observed.size());
+        assertEquals(IDENTITY, observed.getFirst().identity());
+        assertEquals("slot:0/shulker:0", observed.getFirst().location().containerPath());
+    }
+
+    private static CountingShulkerItem countingShulkerContaining(ItemStack nested) {
+        CountingShulkerItem item = new CountingShulkerItem();
+        BlockStateMeta meta = assertInstanceOf(BlockStateMeta.class, item.getItemMeta());
+        ShulkerBox box = assertInstanceOf(ShulkerBox.class, meta.getBlockState());
+        box.getInventory().setItem(0, nested);
+        meta.setBlockState(box);
+        assertTrue(item.setItemMeta(meta));
+        item.clearMetadataReads();
+        return item;
+    }
+
+    private static final class CountingShulkerItem extends ItemStack {
+        private int metadataReadCount;
+
+        CountingShulkerItem() {
+            super(Material.SHULKER_BOX);
+        }
+
+        @Override
+        public ItemMeta getItemMeta() {
+            metadataReadCount++;
+            return super.getItemMeta();
+        }
+
+        int metadataReads() {
+            return metadataReadCount;
+        }
+
+        void clearMetadataReads() {
+            metadataReadCount = 0;
+        }
     }
 
     private PaperPhysicalInventoryScanner scanner(
