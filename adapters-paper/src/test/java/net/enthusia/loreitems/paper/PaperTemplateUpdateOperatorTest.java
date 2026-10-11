@@ -20,6 +20,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.meta.BundleMeta;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,12 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 class PaperTemplateUpdateOperatorTest {
     private static final String NEW_BLADE = "New Blade";
+    private static final Component SIGNATURE_LINE =
+            Component.text("Signed by Alice").insertion("itemsignature:managed");
+    private static final org.bukkit.NamespacedKey SIGNER =
+            new org.bukkit.NamespacedKey("itemsignature", "signer_name");
+    private static final org.bukkit.NamespacedKey SIGNED_AT =
+            new org.bukkit.NamespacedKey("itemsignature", "signed_at");
     private static final LoreDefinitionId DEFINITION_ID = new LoreDefinitionId(
             UUID.fromString("11111111-1111-1111-1111-111111111111"));
     private static final LoreInstanceId INSTANCE_ID = new LoreInstanceId(
@@ -212,6 +219,57 @@ class PaperTemplateUpdateOperatorTest {
         ItemStack storedLoreItem = storedMeta.getItems().get(1);
         assertEquals(Component.text(NEW_BLADE), storedLoreItem.getItemMeta().displayName());
         assertEquals(targetIdentity(), trackedIdentity(storedLoreItem));
+    }
+
+    @Test
+    void templateUpdateKeepsAnEnthusiaSignature() {
+        ItemStack original = tracked(signed(withLore(named(Material.DIAMOND_SWORD, "Old Blade"), "Old lore")), REVISION_ONE);
+        player.getInventory().setItem(0, original);
+
+        PaperTemplateUpdateOperator.ApplyResult result = operator.apply(
+                plugin,
+                PaperTemplateUpdateItemReference.root(
+                        new PaperInventoryReference.PlayerMain(player.getUniqueId()), 0),
+                prepared(withLore(named(Material.DIAMOND_SWORD, NEW_BLADE), "New lore")));
+
+        assertEquals(PaperTemplateUpdateOperator.ApplyResult.Status.APPLIED, result.status());
+        ItemMeta stored = Objects.requireNonNull(player.getInventory().getItem(0)).getItemMeta();
+        assertEquals(Component.text(NEW_BLADE), stored.displayName());
+        assertEquals(List.of(Component.text("New lore"), SIGNATURE_LINE), stored.lore());
+        assertEquals("Alice", stored.getPersistentDataContainer().get(SIGNER, PersistentDataType.STRING));
+        assertEquals(1_700_000_000_000L, stored.getPersistentDataContainer().get(SIGNED_AT, PersistentDataType.LONG));
+    }
+
+    @Test
+    void signedItemAlreadyAtTheTargetRevisionIsRecognisedAsApplied() {
+        ItemStack target = tracked(signed(withLore(named(Material.DIAMOND_SWORD, NEW_BLADE), "New lore")), REVISION_TWO);
+        player.getInventory().setItem(0, target);
+
+        PaperTemplateUpdateOperator.ApplyResult result = operator.apply(
+                plugin,
+                PaperTemplateUpdateItemReference.root(
+                        new PaperInventoryReference.PlayerMain(player.getUniqueId()), 0),
+                prepared(withLore(named(Material.DIAMOND_SWORD, NEW_BLADE), "New lore")));
+
+        assertEquals(PaperTemplateUpdateOperator.ApplyResult.Status.ALREADY_APPLIED, result.status());
+    }
+
+    private static ItemStack withLore(ItemStack item, String line) {
+        ItemMeta meta = Objects.requireNonNull(item.getItemMeta());
+        meta.lore(List.of(Component.text(line)));
+        assertTrue(item.setItemMeta(meta));
+        return item;
+    }
+
+    private static ItemStack signed(ItemStack item) {
+        ItemMeta meta = Objects.requireNonNull(item.getItemMeta());
+        List<Component> lore = new java.util.ArrayList<>(Objects.requireNonNull(meta.lore()));
+        lore.add(SIGNATURE_LINE);
+        meta.lore(lore);
+        meta.getPersistentDataContainer().set(SIGNER, PersistentDataType.STRING, "Alice");
+        meta.getPersistentDataContainer().set(SIGNED_AT, PersistentDataType.LONG, 1_700_000_000_000L);
+        assertTrue(item.setItemMeta(meta));
+        return item;
     }
 
     private PreparedTemplateUpdate prepared(ItemStack desiredTemplate) {
