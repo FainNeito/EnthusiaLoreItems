@@ -74,7 +74,7 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
     private PaperCreativeCopyController creativeCopyController;
     private BiConsumer<UUID, LoreItemIdentity> creativeLossObserver;
     private final PaperVoidLossCoordinator voidLossCoordinator;
-    private final BooleanSupplier sharedContainersAllowedSupplier;
+    private final PaperItemStorageProtection storageProtection;
 
     private volatile boolean closed;
 
@@ -105,10 +105,25 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
             Supplier<VoidLossUseCase> useCaseSupplier,
             IntSupplier maxInFlightSupplier,
             BooleanSupplier sharedContainersAllowedSupplier) {
+        this(plugin, useCaseSupplier, maxInFlightSupplier,
+                (Supplier<net.enthusia.loreitems.application.ItemStoragePolicy>) () -> net.enthusia.loreitems.application.ItemStoragePolicy.legacy(
+                        sharedContainersAllowedSupplier.getAsBoolean()));
+    }
+
+    public static PaperTrackedItemProtectionListener withStoragePolicy(
+            Plugin plugin, Supplier<VoidLossUseCase> useCaseSupplier,
+            IntSupplier maxInFlightSupplier,
+            Supplier<net.enthusia.loreitems.application.ItemStoragePolicy> policies) {
+        return new PaperTrackedItemProtectionListener(plugin, useCaseSupplier, maxInFlightSupplier, policies);
+    }
+
+    private PaperTrackedItemProtectionListener(
+            Plugin plugin, Supplier<VoidLossUseCase> useCaseSupplier,
+            IntSupplier maxInFlightSupplier,
+            Supplier<net.enthusia.loreitems.application.ItemStoragePolicy> policies) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.identityCodec = new PaperItemIdentityCodec();
-        this.sharedContainersAllowedSupplier = Objects.requireNonNull(
-                sharedContainersAllowedSupplier, "sharedContainersAllowedSupplier");
+        this.storageProtection = new PaperItemStorageProtection(policies);
         this.creativeIdentityProtection = new PaperCreativeIdentityProtection(itemCollector);
         this.voidLossCoordinator = new PaperVoidLossCoordinator(
                 plugin,
@@ -252,60 +267,23 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSharedContainerClick(InventoryClickEvent event) {
-        if (sharedContainersAllowed()) {
-            return;
-        }
-        Inventory top = event.getView().getTopInventory();
-        if (top.getType() == InventoryType.SHULKER_BOX
-                && wouldInsertIntoTopInventory(event, top.getSize())) {
-            event.setCancelled(true);
-            return;
-        }
-        ItemStack current = event.getCurrentItem();
-        ItemStack cursor = event.getCursor();
-        if ((isBundle(current) && hasLoreIdentityEvidenceInTree(cursor))
-                || (isBundle(cursor) && hasLoreIdentityEvidenceInTree(current))) {
+        if (storageProtection.cancelClick(event)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSharedContainerDrag(InventoryDragEvent event) {
-        if (sharedContainersAllowed()
-                || event.getView().getTopInventory().getType() != InventoryType.SHULKER_BOX
-                || !hasLoreIdentityEvidenceInTree(event.getOldCursor())) {
-            return;
-        }
-        int topSize = event.getView().getTopInventory().getSize();
-        if (event.getRawSlots().stream().anyMatch(slot -> slot >= 0 && slot < topSize)) {
+        if (storageProtection.cancelDrag(event)) {
             event.setCancelled(true);
         }
     }
 
-    private boolean wouldInsertIntoTopInventory(InventoryClickEvent event, int topSize) {
-        int rawSlot = event.getRawSlot();
-        if (rawSlot >= 0 && rawSlot < topSize) {
-            if (hasLoreIdentityEvidenceInTree(event.getCursor())) {
-                return true;
-            }
-            int hotbarButton = event.getHotbarButton();
-            return hotbarButton >= 0
-                    && hasLoreIdentityEvidenceInTree(
-                            event.getWhoClicked().getInventory().getItem(hotbarButton));
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onStorageMove(InventoryMoveItemEvent event) {
+        if (storageProtection.cancelMove(event)) {
+            event.setCancelled(true);
         }
-        return event.isShiftClick() && hasLoreIdentityEvidenceInTree(event.getCurrentItem());
-    }
-
-    private boolean sharedContainersAllowed() {
-        return sharedContainersAllowedSupplier.getAsBoolean();
-    }
-
-    private static boolean isBundle(ItemStack item) {
-        if (item == null || item.getType().isAir()) {
-            return false;
-        }
-        String material = item.getType().name();
-        return material.equals("BUNDLE") || material.endsWith("_BUNDLE");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

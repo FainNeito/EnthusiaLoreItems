@@ -35,4 +35,34 @@ class FoundationConfigurationLoaderTest {
                 IllegalArgumentException.class,
                 () -> new FoundationConfigurationLoader(temporaryDirectory).loadOrCreate());
     }
+    @Test
+    void parsesIndependentDefaultsOverridesAndInheritance() throws Exception {
+        String id = "11111111-1111-1111-1111-111111111111";
+        Files.writeString(temporaryDirectory.resolve("config.yml"),
+                "shared-containers-allowed: false\n"
+                + "storage-defaults.bundles: true\n"
+                + "item-storage." + id + ".shulkers: true\n"
+                + "item-storage." + id + ".bundles: inherit\n"
+                + "item-storage." + id + ".ender-chests: false\n");
+        var policy = new FoundationConfigurationLoader(temporaryDirectory).loadOrCreate().storagePolicy();
+        var definition = java.util.UUID.fromString(id);
+        assertTrue(policy.allows(definition, net.enthusia.loreitems.application.ItemStoragePolicy.Container.SHULKER));
+        assertTrue(policy.allows(definition, net.enthusia.loreitems.application.ItemStoragePolicy.Container.BUNDLE));
+        org.junit.jupiter.api.Assertions.assertFalse(policy.allows(definition,
+                net.enthusia.loreitems.application.ItemStoragePolicy.Container.ENDER_CHEST));
+    }
+
+    @Test
+    void rejectsTypoDestinationInvalidValueAndMalformedUuid() throws Exception {
+        for (String entry : java.util.List.of(
+                "item-storage.11111111-1111-1111-1111-111111111111.shulker: false",
+                "item-storage.11111111-1111-1111-1111-111111111111.shulkers: maybe",
+                "item-storage.1-1-1-1-1.shulkers: true",
+                "item-storage.11111111-1111-1111-1111-111111111111.shulkers.extra: true")) {
+            Files.writeString(temporaryDirectory.resolve("config.yml"), entry);
+            assertThrows(IllegalArgumentException.class,
+                    () -> new FoundationConfigurationLoader(temporaryDirectory).loadOrCreate());
+        }
+    }
+
 }

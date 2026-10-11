@@ -34,6 +34,18 @@ class StartupConfigurationGateTest {
         assertFalse(gate.sharedContainersAllowed(denied));
     }
 
+    @Test
+    void storagePolicyIsFencedUntilPublishedAndAfterReset() {
+        var gate = new StartupConfigurationGate();
+        var destination = net.enthusia.loreitems.application.ItemStoragePolicy.Container.ENDER_CHEST;
+        var id = java.util.UUID.randomUUID();
+        assertFalse(gate.storagePolicy(configuration(true)).allows(id, destination));
+        gate.publish();
+        assertTrue(gate.storagePolicy(configuration(true)).allows(id, destination));
+        gate.reset();
+        assertFalse(gate.storagePolicy(configuration(true)).allows(id, destination));
+    }
+
     private static FoundationConfiguration configuration(boolean sharedContainersAllowed) {
         FoundationConfiguration defaults = FoundationConfiguration.defaults();
         return new FoundationConfiguration(

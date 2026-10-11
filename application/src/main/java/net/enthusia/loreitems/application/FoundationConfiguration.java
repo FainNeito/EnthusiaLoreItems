@@ -10,9 +10,17 @@ public record FoundationConfiguration(
         int defaultPageSize,
         int maxPageSize,
         int mutationBudgetPerTick,
-        boolean sharedContainersAllowed) {
+        boolean sharedContainersAllowed,
+        ItemStoragePolicy storagePolicy) {
+
+    public FoundationConfiguration(int busy, int queue, int shutdown, int batch, int lease,
+            int warning, int page, int maxPage, int budget, boolean shared) {
+        this(busy, queue, shutdown, batch, lease, warning, page, maxPage, budget, shared,
+                ItemStoragePolicy.legacy(shared));
+    }
 
     public FoundationConfiguration {
+        java.util.Objects.requireNonNull(storagePolicy, "storagePolicy");
         requireRange(databaseBusyTimeoutMillis, 100, 60_000, "databaseBusyTimeoutMillis");
         requireRange(databaseQueueCapacity, 16, 4_096, "databaseQueueCapacity");
         requireRange(databaseShutdownTimeoutSeconds, 1, 60, "databaseShutdownTimeoutSeconds");

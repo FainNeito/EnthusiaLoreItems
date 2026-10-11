@@ -25,7 +25,8 @@ final class FoundationConfigurationLoader {
             "default-page-size",
             "max-page-size",
             "mutation-budget-per-tick",
-            "shared-containers-allowed");
+            "shared-containers-allowed",
+            "storage-defaults.shulkers", "storage-defaults.bundles", "storage-defaults.ender-chests");
 
     private final Path dataDirectory;
 
@@ -60,7 +61,7 @@ final class FoundationConfigurationLoader {
             }
             String key = line.substring(0, separator).strip();
             String value = line.substring(separator + 1).strip();
-            if (!KNOWN_KEYS.contains(key)) {
+            if (!KNOWN_KEYS.contains(key) && !key.startsWith("item-storage.")) {
                 throw new IllegalArgumentException("Unknown config key: " + key);
             }
             if (value.isEmpty()) {
@@ -80,7 +81,8 @@ final class FoundationConfigurationLoader {
                 integer(values, "default-page-size", defaults.defaultPageSize()),
                 integer(values, "max-page-size", defaults.maxPageSize()),
                 integer(values, "mutation-budget-per-tick", defaults.mutationBudgetPerTick()),
-                bool(values, "shared-containers-allowed", defaults.sharedContainersAllowed()));
+                bool(values, "shared-containers-allowed", defaults.sharedContainersAllowed()),
+                ItemStorageConfiguration.parse(values));
     }
 
     private void copyDefault(Path destination) throws IOException {

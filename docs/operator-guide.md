@@ -57,6 +57,25 @@ shared-containers-allowed: true
 
 `shared-containers-allowed: true` is the default and leaves nested shulker/bundle storage unrestricted. Set it to `false` to prohibit players from inserting LoreItems into either shulkers or bundles; removing an existing LoreItem from those containers remains allowed.
 
+### Per-item storage
+
+Rules apply to all copies of a lore-item definition, identified by its immutable definition UUID. They do not use display names or instance UUIDs. Keep the following as **flat dotted keys** in `config.yml`; do not turn them into nested YAML sections:
+
+```yaml
+storage-defaults.shulkers: inherit
+storage-defaults.bundles: inherit
+storage-defaults.ender-chests: true
+
+# Replace the example UUID with the definition UUID from your administration data.
+item-storage.11111111-1111-1111-1111-111111111111.shulkers: false
+item-storage.11111111-1111-1111-1111-111111111111.bundles: inherit
+item-storage.11111111-1111-1111-1111-111111111111.ender-chests: true
+```
+
+Use `true` to allow, `false` to prohibit insertion, or `inherit` (or omit the key) to use the default. Shulker/bundle global `inherit` falls back to `shared-containers-allowed`; ender-chest global `inherit` falls back to true. Overrides take precedence independently for each destination. A maximum of 1024 definition overrides is supported. Wrong destination names, malformed UUIDs, invalid values, and duplicate keys reject the candidate configuration.
+
+Restrictions inspect nested contents as well as the outer item. A denied item inside a bundle or shulker cannot be inserted into a prohibited ender chest. Ambiguous identity or inspection beyond eight nesting levels/512 visited items cancels insertion without altering the item. Existing stored items remain where they are and can be removed after a policy change. No database migration or item rewrite is required.
+
 ### Restart-required settings
 
 These are captured by storage resources or startup-created workers and require a clean server restart after change:
@@ -71,9 +90,9 @@ These are captured by storage resources or startup-created workers and require a
 - `max-page-size`
 - `mutation-budget-per-tick`
 
-### Hot-reloadable setting
+### Hot-reloadable storage policies
 
-Only `shared-containers-allowed` is currently hot reloadable. After changing it, run `/loreitems reload` with `enthusia.loreitems.admin.reload`. The plugin validates the complete candidate snapshot off the server thread and atomically swaps it only when valid and when all restart-required settings still match the running snapshot.
+`shared-containers-allowed`, `storage-defaults.*`, and `item-storage.*` are hot reloadable. After changing them, run `/loreitems reload` with `enthusia.loreitems.admin.reload`. The plugin validates the complete candidate snapshot off the server thread and atomically swaps it only when valid and when all restart-required settings still match the running snapshot.
 
 A failed reload, or a reload that also changes a restart-required setting, leaves the previous complete snapshot active. Reload must not discard active deliveries, mutations, campaigns, or destructive work. Do not use Bukkit/Paper `/reload` as a substitute; use a clean server restart for every restart-required setting.
 

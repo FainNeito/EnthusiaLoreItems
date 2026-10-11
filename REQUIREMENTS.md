@@ -85,7 +85,7 @@ By default, tracked instances:
 
 Void loss is valid and must be recorded as a terminal destruction event, not automatically restored.
 
-Nested storage in shulker boxes and bundles is supported and tracked. One global configuration setting controls whether players are prohibited from placing lore items into either shulkers or bundles. The restriction is disabled by default. Both container types share the same setting.
+Nested storage in shulker boxes and bundles is supported and tracked. Independent global defaults and optional per-definition overrides control insertion into shulkers, bundles, and ender chests. Missing overrides inherit the relevant default. The legacy `shared-containers-allowed` setting remains the fallback for shulkers and bundles; ender chests default to allowed. Restrictions must inspect nested contents, leave existing stored items untouched, and allow removal. See `docs/per-item-storage.md` for acceptance requirements.
 
 ## 6. Tracking and locations
 
