@@ -89,6 +89,8 @@ Nested storage in shulker boxes and bundles is supported and tracked. One global
 
 An individual definition can also be storage-locked: when its template carries the `enthusialoreitems:storage_lock` item marker, its instances can never be placed into a shulker box, a bundle or an Ender Chest (by click, shift-click, number-key or offhand swap, drag, or hopper into a shulker), whatever the global setting says. Taking a locked item out is always allowed. Because the marker is ordinary template data, it survives every template rollout. A player in creative mode cannot move a storage-locked item at all (click, creative set-slot, drag, hand swap or drop); it stays where it is until the player leaves creative.
 
+A definition whose template carries the `enthusialoreitems:announce_holder` marker is announced to the whole server when a different player comes to hold it: `The [item name] has a new bearer: [player]`. Holder changes within two minutes of an announcement collapse into one later message naming whoever holds it then; handing it back to the announced holder says nothing. Creative, spectator and vanished players never trigger it, and the last announced holder is kept across restarts in `holder-announcements.yml`.
+
 ## 6. Tracking and locations
 
 The plugin must track current or last-confirmed location without force-loading chunks. Supported location categories include:
