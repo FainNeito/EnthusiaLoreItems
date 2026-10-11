@@ -13,6 +13,8 @@ public record FoundationConfiguration(
         boolean sharedContainersAllowed,
         ItemStoragePolicy storagePolicy) {
 
+    // Preserve the existing public constructor for companion-plugin compatibility.
+    @SuppressWarnings("PMD.ExcessiveParameterList")
     public FoundationConfiguration(int busy, int queue, int shutdown, int batch, int lease,
             int warning, int page, int maxPage, int budget, boolean shared) {
         this(busy, queue, shutdown, batch, lease, warning, page, maxPage, budget, shared,

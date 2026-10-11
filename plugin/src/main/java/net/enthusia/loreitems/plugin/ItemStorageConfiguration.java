@@ -11,8 +11,11 @@ import net.enthusia.loreitems.application.ItemStoragePolicy.Container;
 
 /** Parses the existing flat configuration format off the server thread. */
 final class ItemStorageConfiguration {
+    private static final int OVERRIDE_KEY_PARTS = 3;
     private ItemStorageConfiguration() {}
 
+    // Candidate maps are confined to this parse and copied before atomic publication.
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
     static ItemStoragePolicy parse(Map<String, String> values) {
         boolean shared = booleanValue(values.getOrDefault("shared-containers-allowed", "true"));
         Map<UUID, Map<Container, Boolean>> overrides = new HashMap<>();
@@ -28,10 +31,12 @@ final class ItemStorageConfiguration {
                 defaultValue(values, "ender-chests", true), overrides);
     }
 
+    // EnumMap is local to the unpublished candidate, never concurrently mutated.
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
     private static void addOverride(Map<UUID, Map<Container, Boolean>> overrides, Set<String> seen,
             String key, String value) {
         String[] parts = key.split("\\.", -1);
-        if (parts.length != 3) {
+        if (parts.length != OVERRIDE_KEY_PARTS) {
             throw new IllegalArgumentException("Expected item-storage.<definition UUID>.<container>: " + key);
         }
         UUID id = UUID.fromString(parts[1]);
@@ -42,7 +47,7 @@ final class ItemStorageConfiguration {
         if (!seen.add(id + "." + container)) {
             throw new IllegalArgumentException("Duplicate storage override: " + key);
         }
-        if (!overrides.containsKey(id) && overrides.size() >= 1_024) {
+        if (!overrides.containsKey(id) && overrides.size() >= ItemStoragePolicy.MAX_OVERRIDES) {
             throw new IllegalArgumentException("At most 1024 item storage overrides are supported");
         }
         Map<Container, Boolean> rules = overrides.computeIfAbsent(id, ignored -> new EnumMap<>(Container.class));

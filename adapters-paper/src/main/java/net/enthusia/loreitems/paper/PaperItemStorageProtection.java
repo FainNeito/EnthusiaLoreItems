@@ -80,21 +80,26 @@ final class PaperItemStorageProtection {
         if (item == null || item.getType().isAir()) {
             return false;
         }
-        if (budget[0]-- <= 0 || depth > MAX_DEPTH) {
+        int remaining = budget[0];
+        budget[0] = remaining - 1;
+        if (remaining <= 0 || depth > MAX_DEPTH) {
             return true;
         }
         ItemIdentityReadResult result = identities.readIdentity(item);
-        if (result instanceof ItemIdentityReadResult.Invalid) {
-            return true;
-        }
-        if (result instanceof ItemIdentityReadResult.Tracked tracked
-                && !policy.allows(tracked.identity().definitionId().value(), destination)) {
+        if (prohibitedIdentity(result, destination, policy)) {
             return true;
         }
         if (!item.hasItemMeta()) {
             return false;
         }
         return prohibitedNested(item, destination, policy, depth, budget);
+    }
+
+    private static boolean prohibitedIdentity(ItemIdentityReadResult result,
+            Container destination, ItemStoragePolicy policy) {
+        return result instanceof ItemIdentityReadResult.Invalid
+                || (result instanceof ItemIdentityReadResult.Tracked tracked
+                    && !policy.allows(tracked.identity().definitionId().value(), destination));
     }
 
     private boolean prohibitedNested(ItemStack item, Container destination, ItemStoragePolicy policy,

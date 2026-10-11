@@ -54,6 +54,7 @@ class FoundationConfigurationLoaderTest {
 
     @Test
     void rejectsTypoDestinationInvalidValueAndMalformedUuid() throws Exception {
+        var loader = new FoundationConfigurationLoader(temporaryDirectory);
         for (String entry : java.util.List.of(
                 "item-storage.11111111-1111-1111-1111-111111111111.shulker: false",
                 "item-storage.11111111-1111-1111-1111-111111111111.shulkers: maybe",
@@ -61,7 +62,7 @@ class FoundationConfigurationLoaderTest {
                 "item-storage.11111111-1111-1111-1111-111111111111.shulkers.extra: true")) {
             Files.writeString(temporaryDirectory.resolve("config.yml"), entry);
             assertThrows(IllegalArgumentException.class,
-                    () -> new FoundationConfigurationLoader(temporaryDirectory).loadOrCreate());
+                    loader::loadOrCreate);
         }
     }
 

@@ -12,10 +12,13 @@ public record ItemStoragePolicy(
         boolean enderChestsAllowed,
         Map<UUID, Map<Container, Boolean>> overrides) {
     public enum Container { SHULKER, BUNDLE, ENDER_CHEST }
+    public static final int MAX_OVERRIDES = 1_024;
 
+    // The mutable copy is constructor-local; only deeply immutable maps are published.
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
     public ItemStoragePolicy {
         Objects.requireNonNull(overrides, "overrides");
-        if (overrides.size() > 1_024) {
+        if (overrides.size() > MAX_OVERRIDES) {
             throw new IllegalArgumentException("At most 1024 item storage overrides are supported");
         }
         Map<UUID, Map<Container, Boolean>> copied = new HashMap<>();

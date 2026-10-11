@@ -42,6 +42,8 @@ class ItemStoragePolicyTest {
     }
 
     @Test
+    // Intentionally mutate caller-owned, thread-confined maps to prove snapshot isolation.
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
     void callerMutationCannotChangeActiveOverrides() {
         UUID id = UUID.randomUUID();
         Map<ItemStoragePolicy.Container, Boolean> rules = new java.util.HashMap<>();

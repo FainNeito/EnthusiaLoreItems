@@ -43,3 +43,4 @@ Read [`CURRENT.md`](CURRENT.md) first. This index is for history and targeted re
 
 Append one row for every new immutable report. Do not remove historical entries when a phase or PR is completed.
 - [0037 — Per-item storage policies (c584c6ab)](0037-2026-10-11-pr61-per-item-storage.md)
+- [0038 - Storage review refinement](0038-2026-10-11-pr61-storage-review-refinement.md)

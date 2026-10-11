@@ -21,7 +21,7 @@ Engine: immutable application policy; strict off-thread configuration parsing; l
 
 Architecture/refine: Gradle Java 21/Paper API 1.21.11 `clean check :plugin:shadowJar` passed, followed by `check :plugin:shadowJar` after refinements. 529 JUnit cases: 522 passed, 7 pre-existing provider/platform skips, zero failures/errors. 52 repository Python tests passed in an isolated tooling environment. New-code Lizard gate passed without changing thresholds. SpotBugs is advisory in this project and printed existing adapter findings; a successful Gradle check does not establish zero static-analysis warnings. Manual diff review covered nested bypasses, insertion/removal distinction, hotbar/offhand, shift-click, drag, hopper, immutable snapshots, startup fencing, and unchanged schema/API.
 
-Hosted checks and Java/Bedrock live acceptance remain pending. No project-local EARS/state helper was found; this document tracks requirements and evidence. Configuration-only operator controls add no player GUI.
+Hosted Codacy on 8c23f893 reported 11 findings. Refined nested-check complexity, explicit budget decrement, named policy/key limits and reused test loader. Narrow PMD suppressions document thread-confined candidate/test maps and the compatibility-preserving legacy constructor; no analysis gate was weakened. Repeated Gradle check/shadowJar and unchanged Lizard gate passed after these refinements. Hosted final-head checks and Java/Bedrock live acceptance remain pending. No project-local EARS/state helper was found; this document tracks requirements and evidence. Configuration-only operator controls add no player GUI.
 
 ## TEST acceptance (pending)
 
