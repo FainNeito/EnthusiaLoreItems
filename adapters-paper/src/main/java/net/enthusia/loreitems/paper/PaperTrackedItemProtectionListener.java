@@ -102,6 +102,7 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
     private final PaperCreativeIdentityProtection creativeIdentityProtection;
     private final PaperCreativeStorageLockListener creativeStorageLock =
             new PaperCreativeStorageLockListener(itemCollector::hasStorageLockInTree);
+    private PaperHolderAnnouncer holderAnnouncer;
     private final PaperVoidLossCoordinator voidLossCoordinator;
     private final BooleanSupplier sharedContainersAllowedSupplier;
 
@@ -152,6 +153,9 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getPluginManager().registerEvents(creativeStorageLock, plugin);
+        holderAnnouncer = new PaperHolderAnnouncer(
+                plugin, plugin.getDataFolder().toPath().resolve("holder-announcements.yml"));
+        holderAnnouncer.start();
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -524,5 +528,8 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
         voidLossCoordinator.close();
         HandlerList.unregisterAll(this);
         HandlerList.unregisterAll(creativeStorageLock);
+        if (holderAnnouncer != null) {
+            holderAnnouncer.close();
+        }
     }
 }
