@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.enthusia.loreitems.application.TrackingMetrics;
 import net.enthusia.loreitems.application.TrackingObservationUseCase;
 import org.bukkit.Chunk;
@@ -21,6 +22,7 @@ class PaperPhysicalTrackingQueueCoalescingTest {
     private ServerMock server;
     private PaperPhysicalTrackingListener listener;
     private TrackingMetrics metrics;
+    private AtomicInteger scanBudget;
 
     @BeforeEach
     void setUp() {
@@ -30,8 +32,9 @@ class PaperPhysicalTrackingQueueCoalescingTest {
                 CompletableFuture.completedFuture(TrackingObservationUseCase.Result.of(
                         TrackingObservationUseCase.Status.RECORDED, "ok"));
         metrics = new TrackingMetrics();
+        scanBudget = new AtomicInteger(4);
         listener = new PaperPhysicalTrackingListener(
-                plugin, () -> recorder, () -> 4, metrics);
+                plugin, () -> recorder, scanBudget::get, metrics);
     }
 
     @AfterEach
@@ -112,9 +115,65 @@ class PaperPhysicalTrackingQueueCoalescingTest {
         listener.enqueue(PaperTrackingScanRequest.chunk(
                 world.getChunkAt(1, 0),
                 TrackingObservationUseCase.Presence.PRESENT, PERIODIC_SOURCE));
-        assertEquals(1L, metrics.snapshot().scanEventRejected());
-        assertEquals(1L, metrics.snapshot().scanPeriodicRejected());
+        assertEquals(0L, metrics.snapshot().scanEventRejected(),
+                "New lifecycle work displaces routine reconciliation, never event scans");
+        assertEquals(2L, metrics.snapshot().scanPeriodicRejected());
+        assertEquals(0, listener.queuedPeriodicChunkCount());
+        assertEquals(128, listener.queuedScanCount());
         assertEquals(128L, metrics.snapshot().scanBacklogPeak());
+    }
+
+    @Test
+    void allEventBacklogStillHasBoundedSafeRejection() {
+        for (int i = 0; i < 128; i++) {
+            listener.enqueue(PaperTrackingScanRequest.player(
+                    new UUID(0L, i + 1L), true, "player-join"));
+        }
+        listener.enqueue(PaperTrackingScanRequest.player(
+                UUID.randomUUID(), true, "player-join"));
+
+        assertEquals(128, listener.queuedScanCount());
+        assertEquals(1L, metrics.snapshot().scanEventRejected());
+        assertEquals(0L, metrics.snapshot().scanPeriodicRejected());
+    }
+
+    @Test
+    void runtimeBudgetReductionCannotExpandAnAlreadyOversizedBacklog() {
+        World world = server.addSimpleWorld("world");
+        for (int i = 0; i < 127; i++) {
+            listener.enqueue(PaperTrackingScanRequest.player(
+                    new UUID(0L, i + 1L), true, "player-join"));
+        }
+        listener.enqueue(PaperTrackingScanRequest.chunk(
+                world.getChunkAt(0, 0),
+                TrackingObservationUseCase.Presence.PRESENT, PERIODIC_SOURCE));
+
+        scanBudget.set(2); // Capacity drops from 128 to 64 without deleting queued evidence.
+        listener.enqueue(PaperTrackingScanRequest.player(
+                UUID.randomUUID(), true, "chunk-load"));
+
+        assertEquals(128, listener.queuedScanCount());
+        assertEquals(1, listener.queuedPeriodicChunkCount());
+        assertEquals(1L, metrics.snapshot().scanEventRejected());
+        assertEquals(0L, metrics.snapshot().scanPeriodicRejected());
+    }
+
+    @Test
+    void routineReconciliationMakesProgressDuringEventFlood() {
+        World world = server.addSimpleWorld("world");
+        listener.enqueue(PaperTrackingScanRequest.chunk(
+                world.getChunkAt(0, 0),
+                TrackingObservationUseCase.Presence.PRESENT, PERIODIC_SOURCE));
+        for (int i = 0; i < 12; i++) {
+            listener.enqueue(PaperTrackingScanRequest.player(
+                    new UUID(0L, i + 1L), true, "player-join"));
+        }
+
+        listener.drain();
+        assertEquals(3L, metrics.snapshot().scanEventCompleted());
+        assertEquals(1L, metrics.snapshot().scanPeriodicCompleted());
+        assertEquals(0, listener.queuedPeriodicChunkCount());
+        assertEquals(9, listener.queuedScanCount());
     }
 
     @Test

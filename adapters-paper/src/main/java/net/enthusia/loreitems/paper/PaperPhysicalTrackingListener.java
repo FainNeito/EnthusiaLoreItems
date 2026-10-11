@@ -1,12 +1,10 @@
 package net.enthusia.loreitems.paper;
 
 import io.papermc.paper.event.player.PlayerInventorySlotChangeEvent;
-import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.IntSupplier;
@@ -62,7 +60,8 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
     private final PaperPhysicalEntityScanner entityScanner;
     private final PaperDeferredMainThreadActions deferredActions;
     private final PaperBlockInventoryTracking blockInventoryTracking;
-    private final Queue<PaperTrackingScanRequest> scans = new ArrayDeque<>();
+    private final PaperPhysicalScanQueue scans = new PaperPhysicalScanQueue();
+    private final PaperPhysicalScanAdmission scanAdmission;
     private final PaperPeriodicChunkScanKeys periodicChunkKeys = new PaperPeriodicChunkScanKeys();
     private final Set<UUID> deathDrops = new HashSet<>();
     private final PaperPlayerScanCoalescer pendingPlayerScans;
@@ -84,6 +83,8 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
         this.budgetSupplier = Objects.requireNonNull(budgetSupplier, "budgetSupplier");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.scanTelemetry = new PaperPhysicalScanTelemetry(metrics);
+        this.scanAdmission = new PaperPhysicalScanAdmission(
+                scans, periodicChunkKeys, scanTelemetry);
         this.coordinator = new PaperTrackingCoordinator(
                 plugin, useCaseSupplier, budgetSupplier, metrics);
         this.scanner = new PaperPhysicalInventoryScanner(coordinator);
@@ -370,7 +371,8 @@ public final class PaperPhysicalTrackingListener implements Listener, AutoClosea
             return;
         }
         int maximum = maxQueuedScans();
-        if (scans.size() >= maximum) {
+        if (scans.size() >= maximum
+                && (scans.size() > maximum || !scanAdmission.makeRoomFor(request))) {
             periodicChunkKeys.release(request);
             scanTelemetry.reject(request);
             scanTelemetry.saturated(plugin.getLogger());
