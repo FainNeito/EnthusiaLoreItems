@@ -87,6 +87,8 @@ Void loss is valid and must be recorded as a terminal destruction event, not aut
 
 Nested storage in shulker boxes and bundles is supported and tracked. One global configuration setting controls whether players are prohibited from placing lore items into either shulkers or bundles. The restriction is disabled by default. Both container types share the same setting.
 
+An individual definition can also be storage-locked: when its template carries the `enthusialoreitems:storage_lock` item marker, its instances can never be placed into a shulker box, a bundle or an Ender Chest (by click, shift-click, number-key or offhand swap, drag, or hopper into a shulker), whatever the global setting says. Taking a locked item out is always allowed. Because the marker is ordinary template data, it survives every template rollout.
+
 ## 6. Tracking and locations
 
 The plugin must track current or last-confirmed location without force-loading chunks. Supported location categories include:

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 import net.enthusia.loreitems.application.ItemIdentityReadResult;
 import net.enthusia.loreitems.application.LoreItemIdentity;
 import net.enthusia.loreitems.domain.LocationDescriptor;
@@ -70,7 +71,12 @@ final class PaperTrackedItemCollector {
     }
 
     boolean hasIdentityEvidence(ItemStack item) {
-        return hasIdentityEvidence(item, 0);
+        return matchesInTree(item, 0, identityCodec::hasIdentityEvidence);
+    }
+
+    /** Whether the item, or anything nested in it, carries the storage-lock marker. */
+    boolean hasStorageLockInTree(ItemStack item) {
+        return matchesInTree(item, 0, PaperStorageLock::isLocked);
     }
 
     boolean hasNestedIdentityEvidence(ItemStack item) {
@@ -79,12 +85,12 @@ final class PaperTrackedItemCollector {
         }
         ItemMeta meta = item.getItemMeta();
         if (meta instanceof BlockStateMeta blockMeta
-                && hasIdentityEvidence(blockMeta.getBlockState(), 0)) {
+                && matchesInTree(blockMeta.getBlockState(), 0, identityCodec::hasIdentityEvidence)) {
             return true;
         }
         if (meta instanceof BundleMeta bundle) {
             for (ItemStack nested : bundle.getItems()) {
-                if (hasIdentityEvidence(nested, 1)) {
+                if (matchesInTree(nested, 1, identityCodec::hasIdentityEvidence)) {
                     return true;
                 }
             }
@@ -101,41 +107,41 @@ final class PaperTrackedItemCollector {
         return ROOT_KEY_PREFIX + parentType.name() + ':' + locationKey;
     }
 
-    private boolean hasIdentityEvidence(ItemStack item, int depth) {
+    private boolean matchesInTree(ItemStack item, int depth, Predicate<ItemStack> matcher) {
         if (!scannable(item)) {
             return false;
         }
-        if (identityCodec.hasIdentityEvidence(item)) {
+        if (matcher.test(item)) {
             return true;
         }
         return depth < MAX_NESTING_DEPTH
-                && hasNestedIdentityEvidence(item.getItemMeta(), depth);
+                && nestedMatches(item.getItemMeta(), depth, matcher);
     }
 
-    private boolean hasNestedIdentityEvidence(ItemMeta meta, int depth) {
+    private boolean nestedMatches(ItemMeta meta, int depth, Predicate<ItemStack> matcher) {
         if (meta instanceof BlockStateMeta blockMeta
-                && hasIdentityEvidence(blockMeta.getBlockState(), depth)) {
+                && matchesInTree(blockMeta.getBlockState(), depth, matcher)) {
             return true;
         }
         return meta instanceof BundleMeta bundle
-                && bundleHasIdentityEvidence(bundle, depth);
+                && bundleMatches(bundle, depth, matcher);
     }
 
-    private boolean bundleHasIdentityEvidence(BundleMeta bundle, int depth) {
+    private boolean bundleMatches(BundleMeta bundle, int depth, Predicate<ItemStack> matcher) {
         for (ItemStack nested : bundle.getItems()) {
-            if (hasIdentityEvidence(nested, depth + 1)) {
+            if (matchesInTree(nested, depth + 1, matcher)) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean hasIdentityEvidence(BlockState blockState, int depth) {
+    private boolean matchesInTree(BlockState blockState, int depth, Predicate<ItemStack> matcher) {
         if (!(blockState instanceof ShulkerBox shulker)) {
             return false;
         }
         for (ItemStack nested : shulker.getInventory().getContents()) {
-            if (hasIdentityEvidence(nested, depth + 1)) {
+            if (matchesInTree(nested, depth + 1, matcher)) {
                 return true;
             }
         }

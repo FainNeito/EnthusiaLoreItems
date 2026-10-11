@@ -26,6 +26,11 @@ Only this setting is currently hot reloadable:
 
 - `shared-containers-allowed`
 
+Storage-locked definitions need no setting: the `enthusialoreitems:storage_lock` marker on the definition template
+keeps that item out of shulker boxes, bundles and Ender Chests regardless of `shared-containers-allowed`. Add it to
+the held item before `/loreitems create` (or "replace template from held item"), for example with
+`custom_data={PublicBukkitValues:{"enthusialoreitems:storage_lock":1b}}`.
+
 The following settings are captured by storage resources or startup-created workers and therefore require a clean server restart when changed:
 
 - `database-busy-timeout-millis`
