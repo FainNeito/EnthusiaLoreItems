@@ -87,7 +87,7 @@ jobs:
           PY
             then return 0;fi;sleep .5;done;echo "SQL timeout $q" >&2;return 1;}
           wait_marker(){ local p="$1";for _ in $(seq 1 120);do test -f "$p"&&return;sleep .25;done;return 1;}
-          wait_delivered(){ local player_uuid;player_uuid="$(tr -d '\r\n' < "$ROOT/bot.uuid")";wait_sql "select count(*)=1 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and s.location_type='PLAYER_INVENTORY' and s.location_key='player:$player_uuid' and s.state='CONFIRMED_NOW'";}
+          wait_delivered(){ local player_uuid;player_uuid="$(tr -d '\r\n' < "$ROOT/bot.uuid")";wait_sql "select count(*)=1 from instance_current_state s join lore_instances i on i.instance_id=s.instance_id where i.definition_id='$DEF' and i.instance_id=(select instance_id from lore_instances where definition_id='$DEF' order by created_at desc,instance_id desc limit 1) and i.lifecycle_state='ACTIVE' and s.location_type='PLAYER_INVENTORY' and s.location_key='player:$player_uuid' and s.state='CONFIRMED_NOW'";}
           item_present(){ local marker="$1" before;before="$(grep -Fc "$marker" "$LOG"||true)";echo "execute if entity @e[type=item,tag=wp05-acceptance,limit=1] run say $marker" >&3;for _ in $(seq 1 40);do test "$(grep -Fc "$marker" "$LOG"||true)" -gt "$before"&&return;sleep .25;done;tail -n 100 "$LOG";return 1;}
           reset_item(){ echo 'setblock 2 71 0 minecraft:air' >&3;echo 'tp @e[type=item,tag=wp05-acceptance,limit=1] 2 71 0' >&3;sleep 1;item_present "$1";}
           START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

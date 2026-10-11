@@ -50,3 +50,4 @@ Append one row for every new immutable report. Do not remove historical entries 
 - [0042 - Protection and adoption fixture boundaries](0042-2026-10-11-pr61-protection-and-adoption-fixtures.md)
 - [0043 - Server-authoritative test client inventory](0043-2026-10-11-pr61-authoritative-client-inventory.md)
 - [0044 - Normal inventory drop fixture](0044-2026-10-11-pr61-normal-inventory-drop.md)
+- [0045 - Exact delivery and clear frame fixture space](0045-2026-10-11-pr61-delivery-and-frame-space.md)
