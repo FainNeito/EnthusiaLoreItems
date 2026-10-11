@@ -125,7 +125,15 @@ final class PaperTrackingAdministrationItems {
         return List.of(
                 "Persistence queued: " + snapshot.queued(),
                 "Persistence in flight: " + snapshot.inFlight(),
-                "Scan backlog: " + snapshot.scanBacklog(),
+                "Scan backlog / peak: " + snapshot.scanBacklog()
+                        + '/' + snapshot.scanBacklogPeak(),
+                "Queued event / periodic: " + snapshot.scanEventBacklog()
+                        + '/' + snapshot.scanPeriodicBacklog(),
+                "Scan rejects event / periodic: " + snapshot.scanEventRejected()
+                        + '/' + snapshot.scanPeriodicRejected(),
+                "Scan time event / periodic (ms): "
+                        + snapshot.scanEventNanos() / 1_000_000L
+                        + '/' + snapshot.scanPeriodicNanos() / 1_000_000L,
                 "Truncated bounded scans: " + snapshot.scanTruncated(),
                 "Player scans coalesced: " + snapshot.deferredPlayerScanCoalesced(),
                 "Periodic chunks coalesced: " + snapshot.periodicChunkScanCoalesced(),

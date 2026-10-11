@@ -2,8 +2,9 @@ package net.enthusia.loreitems.paper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import net.enthusia.loreitems.application.MetricsPort;
+import net.enthusia.loreitems.application.TrackingMetrics;
 import net.enthusia.loreitems.application.TrackingObservationUseCase;
 import org.bukkit.Chunk;
 import org.bukkit.World;
@@ -19,6 +20,7 @@ class PaperPhysicalTrackingQueueCoalescingTest {
     private static final String PERIODIC_SOURCE = "periodic-loaded-chunk";
     private ServerMock server;
     private PaperPhysicalTrackingListener listener;
+    private TrackingMetrics metrics;
 
     @BeforeEach
     void setUp() {
@@ -27,8 +29,9 @@ class PaperPhysicalTrackingQueueCoalescingTest {
         TrackingObservationUseCase recorder = request ->
                 CompletableFuture.completedFuture(TrackingObservationUseCase.Result.of(
                         TrackingObservationUseCase.Status.RECORDED, "ok"));
+        metrics = new TrackingMetrics();
         listener = new PaperPhysicalTrackingListener(
-                plugin, () -> recorder, () -> 4, MetricsPort.noOp());
+                plugin, () -> recorder, () -> 4, metrics);
     }
 
     @AfterEach
@@ -87,6 +90,52 @@ class PaperPhysicalTrackingQueueCoalescingTest {
 
         assertEquals(2, listener.queuedScanCount());
         assertEquals(2, listener.queuedPeriodicChunkCount());
+    }
+
+    @Test
+    void recordsActualPeakAndDistinguishesEventFromRoutineRejections() {
+        World world = server.addSimpleWorld("world");
+        for (int i = 0; i < 127; i++) {
+            listener.enqueue(PaperTrackingScanRequest.player(
+                    new UUID(0L, i + 1L), true, "player-join"));
+        }
+        listener.enqueue(PaperTrackingScanRequest.chunk(
+                world.getChunkAt(0, 0),
+                TrackingObservationUseCase.Presence.PRESENT, PERIODIC_SOURCE));
+        assertEquals(128, listener.queuedScanCount());
+        assertEquals(128L, metrics.snapshot().scanBacklogPeak());
+        assertEquals(127L, metrics.snapshot().scanEventBacklog());
+        assertEquals(1L, metrics.snapshot().scanPeriodicBacklog());
+
+        listener.enqueue(PaperTrackingScanRequest.player(
+                UUID.randomUUID(), true, "player-join"));
+        listener.enqueue(PaperTrackingScanRequest.chunk(
+                world.getChunkAt(1, 0),
+                TrackingObservationUseCase.Presence.PRESENT, PERIODIC_SOURCE));
+        assertEquals(1L, metrics.snapshot().scanEventRejected());
+        assertEquals(1L, metrics.snapshot().scanPeriodicRejected());
+        assertEquals(128L, metrics.snapshot().scanBacklogPeak());
+    }
+
+    @Test
+    void oneTickDrainCapturesEventAndRoutineCostWithoutChangingAdmissions() {
+        World world = server.addSimpleWorld("world");
+        listener.enqueue(PaperTrackingScanRequest.player(
+                UUID.randomUUID(), true, "player-join"));
+        listener.enqueue(PaperTrackingScanRequest.chunk(
+                world.getChunkAt(0, 0),
+                TrackingObservationUseCase.Presence.PRESENT, PERIODIC_SOURCE));
+
+        listener.drain();
+
+        assertEquals(0, listener.queuedScanCount());
+        assertEquals(0L, metrics.snapshot().scanEventBacklog());
+        assertEquals(0L, metrics.snapshot().scanPeriodicBacklog());
+        assertEquals(2L, metrics.snapshot().scanBacklogPeak());
+        assertEquals(1L, metrics.snapshot().scanEventCompleted());
+        assertEquals(1L, metrics.snapshot().scanPeriodicCompleted());
+        assertEquals(0L, metrics.snapshot().scanEventRejected());
+        assertEquals(0L, metrics.snapshot().scanPeriodicRejected());
     }
 
     @Test
