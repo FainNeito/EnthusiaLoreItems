@@ -100,6 +100,8 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
     private final PaperItemIdentityCodec identityCodec;
     private final PaperTrackedItemCollector itemCollector = new PaperTrackedItemCollector();
     private final PaperCreativeIdentityProtection creativeIdentityProtection;
+    private final PaperCreativeStorageLockListener creativeStorageLock =
+            new PaperCreativeStorageLockListener(itemCollector::hasStorageLockInTree);
     private final PaperVoidLossCoordinator voidLossCoordinator;
     private final BooleanSupplier sharedContainersAllowedSupplier;
 
@@ -149,6 +151,7 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
             throw new IllegalStateException("Protection listener is closed");
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        plugin.getServer().getPluginManager().registerEvents(creativeStorageLock, plugin);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -520,5 +523,6 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
         closed = true;
         voidLossCoordinator.close();
         HandlerList.unregisterAll(this);
+        HandlerList.unregisterAll(creativeStorageLock);
     }
 }
