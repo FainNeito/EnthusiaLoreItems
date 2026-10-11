@@ -1,0 +1,7 @@
+# Handoff 0042 - remaining fixture boundaries
+
+- PR61 codex/per-item-storage; user authorized merge once all checks pass. No deployment/restart authorization.
+- Hosted head 27594c26 passed tracking, revision rollout, main verification, Codacy, shulker runtime and other gates. Protection artifact 11693166880 stalled after client delivery at toss; conversion artifact 11692353768 found merged plain planks because setup waited for the active instance row rather than physical adoption completion.
+- Protection now verifies held sword, sends a vanilla drop-held-stack action, waits boundedly for removal, and logs begin/end. Existing database drop, void terminal, audit, environment and durability assertions remain. Hungry consumption is actually attempted (higher hunger amplifier); deactivate item after attempt.
+- Conversion setup now waits for ADOPT_HELD_ITEM COMPLETED. Added SQLite tooling regression: ACTIVE/PREPARED must not release setup; COMPLETED must release it. All 53 tooling tests and diff checks pass. Java source unchanged since full checks: 524 JUnit passed, seven existing skips. Review preserves real client event assertions and failure bounds. Final-head CI pending; do not merge until every gate passes.
+- Next: inspect final-head CI/review, fix findings, merge with expected-head guard, verify main contains merged source, and record outcome in PR metadata. docs/runtime-fixture-repair.md is the cumulative requirements/evidence record.

@@ -47,3 +47,4 @@ Append one row for every new immutable report. Do not remove historical entries 
 - [0039 - Immutable copy refinement](0039-2026-10-11-pr61-immutable-copy-refinement.md)
 - [0040 - Protection client synchronization](0040-2026-10-11-pr61-protection-client-wait.md)
 - [0041 - Runtime gate repairs](0041-2026-10-11-pr61-runtime-fixture-repairs.md)
+- [0042 - Protection and adoption fixture boundaries](0042-2026-10-11-pr61-protection-and-adoption-fixtures.md)

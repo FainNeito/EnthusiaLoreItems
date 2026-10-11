@@ -53,13 +53,20 @@ jobs:
           const log=x=>{fs.appendFileSync(`${root}/evidence/bot.log`,`${new Date().toISOString()} ${x}\n`);console.log(x)},bot=mineflayer.createBot({host:'127.0.0.1',port:25565,username:'Wp05Protect',version:'1.21.11',auth:'offline'}),item=name=>bot.inventory.items().find(i=>i.name===name)
           async function waitFile(p){for(let i=0;i<900;i++){if(fs.existsSync(p))return;await sleep(100)}throw new Error(`marker timeout ${p}`)}
           async function waitSword(marker){for(let i=0;i<150;i++){const sword=item('diamond_sword');if(sword)return sword;await sleep(100)}throw new Error(`drop sword missing ${marker}`)}
-          async function dropSword(marker){const sword=await waitSword(marker);await bot.tossStack(sword);await sleep(1200);fs.writeFileSync(`${root}/${marker}.done`,'ok\n')}
+          async function dropSword(marker){
+            const sword=await waitSword(marker);log(`DROP_BEGIN ${marker} slot=${sword.slot} window=${bot.currentWindow?.id??0}`)
+            await bot.equip(sword,'hand');await sleep(300)
+            if(bot.heldItem?.name!=='diamond_sword')throw new Error(`drop held sword missing ${marker}`)
+            bot._client.write('block_dig',{status:3,location:{x:0,y:0,z:0},face:0,sequence:0})
+            for(let i=0;i<150;i++){if(!item('diamond_sword')){await sleep(1200);fs.writeFileSync(`${root}/${marker}.done`,'ok\n');log(`DROP_DONE ${marker}`);return}await sleep(100)}
+            throw new Error(`drop sword remained in inventory ${marker}`)
+          }
           bot.on('message',m=>log(`CHAT ${m.toString()}`));bot.on('error',e=>log(`ERROR ${e.stack||e}`))
           bot.once('spawn',async()=>{try{
             log(`SPAWN uuid=${bot.player.uuid}`);fs.writeFileSync(`${root}/bot.uuid`,`${bot.player.uuid}\n`);fs.writeFileSync(`${root}/bot.ready`,'ok\n')
             await waitFile(`${root}/envdrop.go`);await dropSword('envdrop')
             await waitFile(`${root}/attack.go`);let sword=item('diamond_sword');if(!sword)throw new Error('attack sword missing');await bot.equip(sword,'hand');await sleep(500);sword=item('diamond_sword')||bot.heldItem;const before=sword&&sword.durabilityUsed;log(`DURABILITY_BEFORE ${before}`);if(!Number.isInteger(before))throw new Error(`durability read unavailable ${before}`);const zombie=bot.nearestEntity(e=>e.name==='zombie');if(!zombie)throw new Error('attack zombie missing');bot.attack(zombie);await sleep(1500);sword=item('diamond_sword')||bot.heldItem;const after=sword&&sword.durabilityUsed;log(`DURABILITY_AFTER ${after}`);if(!Number.isInteger(after))throw new Error(`post-attack durability unavailable ${after}`);fs.writeFileSync(`${root}/attack.done`,`${before},${after}\n`)
-            await waitFile(`${root}/consume.go`);let food=item('cooked_beef');if(!food)throw new Error('tracked food missing');await bot.equip(food,'hand');const foodBefore=bot.inventory.items().filter(i=>i.name==='cooked_beef').reduce((n,i)=>n+i.count,0);log(`FOOD_BEFORE ${foodBefore}`);try{await Promise.race([bot.consume(),sleep(5000)])}catch(e){log(`CONSUME_RESULT ${e.message}`)}await sleep(1000);const foodAfter=bot.inventory.items().filter(i=>i.name==='cooked_beef').reduce((n,i)=>n+i.count,0);log(`FOOD_AFTER ${foodAfter}`);fs.writeFileSync(`${root}/consume.done`,`${foodBefore},${foodAfter}\n`)
+            await waitFile(`${root}/consume.go`);let food=item('cooked_beef');if(!food)throw new Error('tracked food missing');await bot.equip(food,'hand');const foodBefore=bot.inventory.items().filter(i=>i.name==='cooked_beef').reduce((n,i)=>n+i.count,0);log(`FOOD_BEFORE ${foodBefore}`);try{await Promise.race([bot.consume(),sleep(5000)])}catch(e){log(`CONSUME_RESULT ${e.message}`)}finally{bot.deactivateItem()}await sleep(1000);const foodAfter=bot.inventory.items().filter(i=>i.name==='cooked_beef').reduce((n,i)=>n+i.count,0);log(`FOOD_AFTER ${foodAfter}`);fs.writeFileSync(`${root}/consume.done`,`${foodBefore},${foodAfter}\n`)
             await waitFile(`${root}/voiddrop.go`);await dropSword('voiddrop')
             await waitFile(`${root}/exit.go`);bot.quit('protection acceptance complete')
           }catch(e){log(`FATAL ${e.stack||e}`);fs.writeFileSync(`${root}/bot.failed`,String(e.stack||e));process.exit(1)}})
@@ -105,7 +112,7 @@ jobs:
           import sqlite3
           with sqlite3.connect('/tmp/wp05-protection/server/plugins/EnthusiaLoreItems/loreitems.db') as c:print(c.execute("select definition_id from lore_definitions where lookup_key='acc_prot_food'").fetchone()[0])
           PY
-          )";echo 'wp05accept perform Wp05Protect loreitems adopt acc_prot_food' >&3;wait_sql "select count(*)=1 from lore_instances where definition_id='$FOOD_DEF' and lifecycle_state='ACTIVE'";echo 'effect give Wp05Protect minecraft:hunger 6 20 true' >&3;sleep 4;touch "$ROOT/consume.go";wait_marker "$ROOT/consume.done";IFS=, read -r FOOD_BEFORE FOOD_AFTER <"$ROOT/consume.done";test "$FOOD_BEFORE" -ge 1;test "$FOOD_AFTER" = "$FOOD_BEFORE"
+          )";echo 'wp05accept perform Wp05Protect loreitems adopt acc_prot_food' >&3;wait_sql "select count(*)=1 from lore_instances where definition_id='$FOOD_DEF' and lifecycle_state='ACTIVE'";echo 'effect give Wp05Protect minecraft:hunger 6 255 true' >&3;sleep 4;touch "$ROOT/consume.go";wait_marker "$ROOT/consume.done";IFS=, read -r FOOD_BEFORE FOOD_AFTER <"$ROOT/consume.done";test "$FOOD_BEFORE" -ge 1;test "$FOOD_AFTER" = "$FOOD_BEFORE"
           echo 'wp05accept place Wp05Protect chest' >&3;sleep 2;echo 'loreitems give acc_prot_sword Wp05Protect' >&3;wait_sql "select count(*)=3 from lore_instances where definition_id='$DEF'";wait_delivered;VOID_INSTANCE="$(python3 - "$DB" "$DEF" <<'PY'
           import sqlite3,sys
           with sqlite3.connect(sys.argv[1]) as c:
