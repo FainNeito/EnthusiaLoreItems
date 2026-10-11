@@ -5,7 +5,12 @@ import com.destroystokyo.paper.event.player.PlayerReadyArrowEvent;
 import io.papermc.paper.event.block.BlockPreDispenseEvent;
 import io.papermc.paper.event.player.PlayerInventorySlotChangeEvent;
 import io.papermc.paper.event.player.PlayerItemFrameChangeEvent;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletionStage;
 import net.enthusia.loreitems.domain.LocationDescriptor;
 import net.enthusia.loreitems.paper.PaperIdentityObservationScanner.ObservedCopy;
@@ -51,6 +56,9 @@ public final class PaperIdentityAnomalyListener implements Listener, AutoCloseab
     private final Plugin plugin;
     private final PaperIdentityObservationScanner scanner;
 
+    // Main-thread only: slot changes and the scheduled checks both run on the server thread.
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
+    private final Map<UUID, Set<Integer>> pendingSlotChecks = new HashMap<>();
     private boolean closed;
 
     public PaperIdentityAnomalyListener(Plugin plugin, int maxInFlight) {
@@ -73,24 +81,45 @@ public final class PaperIdentityAnomalyListener implements Listener, AutoCloseab
         scanner.scanPlayerInventory(event.getPlayer(), "player-join");
     }
 
+    /**
+     * Swaps (offhand, number keys) change two slots one after the other, so for an instant the
+     * same item is in both. Comparing then would record a false duplicate, so each player's
+     * changed slots are re-read and compared once the tick ends; a real duplicate is still there.
+     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onInventorySlotChange(PlayerInventorySlotChangeEvent event) {
         ItemStack changed = event.getNewItemStack();
-        if (changed == null || changed.getType().isAir()) {
+        if (closed || changed == null || changed.getType().isAir()) {
             return;
         }
-        Player player = event.getPlayer();
-        int slot = event.getSlot();
-        ObservedCopy copy = scanner.observe(
-                changed,
-                PaperIdentityObservationScanner.playerLocation(player, "slot:" + slot),
-                "inventory-slot-change");
-        if (copy != null) {
-            scanner.compareWithInventory(
-                    player,
-                    copy,
-                    slot,
+        UUID playerId = event.getPlayer().getUniqueId();
+        Set<Integer> slots = pendingSlotChecks.get(playerId);
+        if (slots == null) {
+            slots = new HashSet<>();
+            pendingSlotChecks.put(playerId, slots);
+            plugin.getServer().getScheduler().runTask(plugin, () -> checkChangedSlots(playerId));
+        }
+        slots.add(event.getSlot());
+    }
+
+    private void checkChangedSlots(UUID playerId) {
+        Set<Integer> slots = pendingSlotChecks.remove(playerId);
+        Player player = plugin.getServer().getPlayer(playerId);
+        if (closed || slots == null || player == null) {
+            return;
+        }
+        for (int slot : slots) {
+            ItemStack current = player.getInventory().getItem(slot);
+            if (current == null || current.getType().isAir()) {
+                continue;
+            }
+            ObservedCopy copy = scanner.observe(
+                    current,
+                    PaperIdentityObservationScanner.playerLocation(player, "slot:" + slot),
                     "inventory-slot-change");
+            if (copy != null) {
+                scanner.compareWithInventory(player, copy, slot, "inventory-slot-change");
+            }
         }
     }
 
@@ -402,6 +431,7 @@ public final class PaperIdentityAnomalyListener implements Listener, AutoCloseab
     @Override
     public void close() {
         closed = true;
+        pendingSlotChecks.clear();
         scanner.close();
         HandlerList.unregisterAll(this);
     }
