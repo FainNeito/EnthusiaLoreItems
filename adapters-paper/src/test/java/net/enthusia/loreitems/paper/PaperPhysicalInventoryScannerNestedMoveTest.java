@@ -123,9 +123,9 @@ class PaperPhysicalInventoryScannerNestedMoveTest {
                 0,
                 new PaperScanLimit(256));
 
-        // Once for root identity decoding and once for nested evidence.
-        // Previously a third snapshot was taken during nested collection.
-        assertEquals(2, item.metadataReads());
+        // Codec reads the root PDC directly. Only the positive nested-shulker
+        // evidence path constructs ItemMeta, once per synchronous visit.
+        assertEquals(1, item.metadataReads(), "Only nested BlockStateMeta needs a snapshot");
         assertEquals(1, item.blockStateReads(), "Nested collection must reuse evidence snapshot");
         assertEquals(1, observations.get(IDENTITY).size());
         assertEquals(
@@ -149,7 +149,7 @@ class PaperPhysicalInventoryScannerNestedMoveTest {
                 "nested-snapshot-regression",
                 new PaperScanLimit(256));
 
-        assertEquals(2, item.metadataReads());
+        assertEquals(1, item.metadataReads(), "Only nested BlockStateMeta needs a snapshot");
         assertEquals(1, item.blockStateReads(), "Physical scanning must reuse evidence snapshot");
         assertEquals(1, observed.size());
         assertEquals(IDENTITY, observed.getFirst().identity());

@@ -176,6 +176,69 @@ class PaperItemIdentityCodecTest {
     }
 
     @Test
+    void foreignMetadataDoesNotProduceIdentityEvidence() {
+        ItemStack item = ItemStack.of(Material.DIAMOND);
+        ItemMeta meta = Objects.requireNonNull(item.getItemMeta());
+        meta.getPersistentDataContainer().set(
+                FOREIGN_KEY, PersistentDataType.STRING, "unrelated");
+        assertTrue(item.setItemMeta(meta));
+
+        assertFalse(codec.hasIdentityEvidence(item));
+        assertInstanceOf(ItemIdentityReadResult.Untracked.class, codec.readIdentity(item));
+    }
+
+    @Test
+    void typeInvalidIdentityKeysRemainEvidenceAndFailClosed() {
+        LoreItemIdentity expected = identity();
+        ItemStack tracked = codec.writeIdentity(ItemStack.of(Material.COMPASS), expected);
+        ItemMeta meta = Objects.requireNonNull(tracked.getItemMeta());
+        meta.getPersistentDataContainer().set(
+                VERSION_KEY, PersistentDataType.STRING, "not-a-version");
+        assertTrue(tracked.setItemMeta(meta));
+
+        assertTrue(codec.hasIdentityEvidence(tracked));
+        ItemIdentityReadResult.Invalid badVersion =
+                assertInstanceOf(ItemIdentityReadResult.Invalid.class, codec.readIdentity(tracked));
+        assertEquals(ItemIdentityFailure.MALFORMED_DATA, badVersion.failure());
+        assertEquals(expected, badVersion.identityEvidence());
+
+        ItemMeta missingMeta = Objects.requireNonNull(tracked.getItemMeta());
+        missingMeta.getPersistentDataContainer().remove(INSTANCE_KEY);
+        assertTrue(tracked.setItemMeta(missingMeta));
+
+        ItemIdentityReadResult.Invalid partial =
+                assertInstanceOf(ItemIdentityReadResult.Invalid.class, codec.readIdentity(tracked));
+        assertEquals(ItemIdentityFailure.PARTIAL_DATA, partial.failure());
+        assertTrue(codec.hasIdentityEvidence(tracked));
+    }
+
+    @Test
+    void hotIdentityReadsUseItemStackViewWithoutCreatingMetaSnapshots() {
+        ItemStack original = codec.writeIdentity(ItemStack.of(Material.COMPASS), identity());
+        CountingItemStack tracked = new CountingItemStack(Material.COMPASS);
+        tracked.setAmount(original.getAmount());
+        assertTrue(tracked.setItemMeta(Objects.requireNonNull(original.getItemMeta())));
+        tracked.resetReads();
+
+        assertTrue(codec.hasIdentityEvidence(tracked));
+        ItemIdentityReadResult.Tracked result =
+                assertInstanceOf(ItemIdentityReadResult.Tracked.class, codec.readIdentity(tracked));
+        assertEquals(identity(), result.identity());
+        assertEquals(0, tracked.metadataReads());
+
+        CountingItemStack ordinary = new CountingItemStack(Material.COMPASS);
+        ItemMeta ordinaryMeta = Objects.requireNonNull(ordinary.getItemMeta());
+        ordinaryMeta.getPersistentDataContainer().set(
+                FOREIGN_KEY, PersistentDataType.STRING, "third-party");
+        assertTrue(ordinary.setItemMeta(ordinaryMeta));
+        ordinary.resetReads();
+
+        assertFalse(codec.hasIdentityEvidence(ordinary));
+        assertInstanceOf(ItemIdentityReadResult.Untracked.class, codec.readIdentity(ordinary));
+        assertEquals(0, ordinary.metadataReads());
+    }
+
+    @Test
     void rejectsPaperAccessWhenNotOnPrimaryThread() {
         PaperItemIdentityCodec guarded =
                 new PaperItemIdentityCodec(new PaperItemCodecThreadGuard(() -> false));
@@ -189,6 +252,28 @@ class PaperItemIdentityCodecTest {
         assertThrows(
                 IllegalStateException.class,
                 () -> guarded.hasIdentityEvidence(ItemStack.of(Material.PAPER)));
+    }
+
+    private static final class CountingItemStack extends ItemStack {
+        private int metadataReadCount;
+
+        private CountingItemStack(Material type) {
+            super(type);
+        }
+
+        @Override
+        public ItemMeta getItemMeta() {
+            metadataReadCount++;
+            return super.getItemMeta();
+        }
+
+        private void resetReads() {
+            metadataReadCount = 0;
+        }
+
+        private int metadataReads() {
+            return metadataReadCount;
+        }
     }
 
     private static LoreItemIdentity identity() {

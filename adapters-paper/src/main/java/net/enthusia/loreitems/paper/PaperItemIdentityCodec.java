@@ -1,5 +1,6 @@
 package net.enthusia.loreitems.paper;
 
+import io.papermc.paper.persistence.PersistentDataContainerView;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.Set;
@@ -85,12 +86,7 @@ public final class PaperItemIdentityCodec implements ItemIdentityCodec<ItemStack
         if (!item.hasItemMeta()) {
             return false;
         }
-        ItemMeta meta = item.getItemMeta();
-        if (meta == null) {
-            return false;
-        }
-        Set<NamespacedKey> presentKeys = meta.getPersistentDataContainer().getKeys();
-        return IDENTITY_KEYS.stream().anyMatch(presentKeys::contains);
+        return containsIdentityKey(item.getPersistentDataContainer());
     }
 
     @Override
@@ -108,16 +104,12 @@ public final class PaperItemIdentityCodec implements ItemIdentityCodec<ItemStack
             return new ItemIdentityReadResult.Untracked();
         }
 
-        ItemMeta meta = item.getItemMeta();
-        if (meta == null) {
-            return invalid(ItemIdentityFailure.MALFORMED_DATA, "Item metadata is unavailable");
-        }
-        return readIdentity(item, meta.getPersistentDataContainer());
+        return readIdentity(item, item.getPersistentDataContainer());
     }
 
     private static ItemIdentityReadResult readIdentity(
-            ItemStack item, PersistentDataContainer data) {
-        long presentIdentityKeys = IDENTITY_KEYS.stream().filter(data.getKeys()::contains).count();
+            ItemStack item, PersistentDataContainerView data) {
+        int presentIdentityKeys = identityKeyCount(data);
         if (presentIdentityKeys == NO_IDENTITY_KEYS) {
             return new ItemIdentityReadResult.Untracked();
         }
@@ -130,8 +122,22 @@ public final class PaperItemIdentityCodec implements ItemIdentityCodec<ItemStack
         return readCompleteIdentity(item, data);
     }
 
+    private static boolean containsIdentityKey(PersistentDataContainerView data) {
+        return data.has(VERSION_KEY)
+                || data.has(DEFINITION_KEY)
+                || data.has(INSTANCE_KEY)
+                || data.has(REVISION_KEY);
+    }
+
+    private static int identityKeyCount(PersistentDataContainerView data) {
+        return (data.has(VERSION_KEY) ? 1 : 0)
+                + (data.has(DEFINITION_KEY) ? 1 : 0)
+                + (data.has(INSTANCE_KEY) ? 1 : 0)
+                + (data.has(REVISION_KEY) ? 1 : 0);
+    }
+
     private static ItemIdentityReadResult readCompleteIdentity(
-            ItemStack item, PersistentDataContainer data) {
+            ItemStack item, PersistentDataContainerView data) {
         byte[] definitionBytes = data.get(DEFINITION_KEY, PersistentDataType.BYTE_ARRAY);
         byte[] instanceBytes = data.get(INSTANCE_KEY, PersistentDataType.BYTE_ARRAY);
         Long revision = data.get(REVISION_KEY, PersistentDataType.LONG);
@@ -167,7 +173,7 @@ public final class PaperItemIdentityCodec implements ItemIdentityCodec<ItemStack
         return new ItemIdentityReadResult.Tracked(identity);
     }
 
-    private static LoreItemIdentity readIdentityEvidence(PersistentDataContainer data) {
+    private static LoreItemIdentity readIdentityEvidence(PersistentDataContainerView data) {
         byte[] definitionBytes = data.get(DEFINITION_KEY, PersistentDataType.BYTE_ARRAY);
         byte[] instanceBytes = data.get(INSTANCE_KEY, PersistentDataType.BYTE_ARRAY);
         Long revision = data.get(REVISION_KEY, PersistentDataType.LONG);
