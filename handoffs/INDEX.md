@@ -42,3 +42,4 @@ Read [`CURRENT.md`](CURRENT.md) first. This index is for history and targeted re
 | 0036 | 2026-08-05 | Implementation PR 4 / PR #9 | Ready for review | [Natural entity template updates](0036-2026-08-05-pr9-natural-entity-template-updates.md) |
 
 Append one row for every new immutable report. Do not remove historical entries when a phase or PR is completed.
+- [0037 — Per-item storage policies (c584c6ab)](0037-2026-10-11-pr61-per-item-storage.md)
