@@ -45,3 +45,4 @@ Append one row for every new immutable report. Do not remove historical entries 
 - [0037 — Per-item storage policies (c584c6ab)](0037-2026-10-11-pr61-per-item-storage.md)
 - [0038 - Storage review refinement](0038-2026-10-11-pr61-storage-review-refinement.md)
 - [0039 - Immutable copy refinement](0039-2026-10-11-pr61-immutable-copy-refinement.md)
+- [0040 - Protection client synchronization](0040-2026-10-11-pr61-protection-client-wait.md)

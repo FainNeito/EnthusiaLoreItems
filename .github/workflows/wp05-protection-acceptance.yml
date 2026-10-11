@@ -52,7 +52,8 @@ jobs:
           const mineflayer=require('mineflayer'),fs=require('fs'),root='/tmp/wp05-protection',sleep=ms=>new Promise(r=>setTimeout(r,ms))
           const log=x=>{fs.appendFileSync(`${root}/evidence/bot.log`,`${new Date().toISOString()} ${x}\n`);console.log(x)},bot=mineflayer.createBot({host:'127.0.0.1',port:25565,username:'Wp05Protect',version:'1.21.11',auth:'offline'}),item=name=>bot.inventory.items().find(i=>i.name===name)
           async function waitFile(p){for(let i=0;i<900;i++){if(fs.existsSync(p))return;await sleep(100)}throw new Error(`marker timeout ${p}`)}
-          async function dropSword(marker){const sword=item('diamond_sword');if(!sword)throw new Error(`drop sword missing ${marker}`);await bot.tossStack(sword);await sleep(1200);fs.writeFileSync(`${root}/${marker}.done`,'ok\n')}
+          async function waitSword(marker){for(let i=0;i<150;i++){const sword=item('diamond_sword');if(sword)return sword;await sleep(100)}throw new Error(`drop sword missing ${marker}`)}
+          async function dropSword(marker){const sword=await waitSword(marker);await bot.tossStack(sword);await sleep(1200);fs.writeFileSync(`${root}/${marker}.done`,'ok\n')}
           bot.on('message',m=>log(`CHAT ${m.toString()}`));bot.on('error',e=>log(`ERROR ${e.stack||e}`))
           bot.once('spawn',async()=>{try{
             log(`SPAWN uuid=${bot.player.uuid}`);fs.writeFileSync(`${root}/bot.uuid`,`${bot.player.uuid}\n`);fs.writeFileSync(`${root}/bot.ready`,'ok\n')
