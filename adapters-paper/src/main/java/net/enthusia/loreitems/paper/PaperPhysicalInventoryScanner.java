@@ -16,7 +16,6 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.meta.BundleMeta;
-import org.bukkit.inventory.meta.ItemMeta;
 
 /** Bounded inventory and nested-container scanning for physical tracking events. */
 final class PaperPhysicalInventoryScanner {
@@ -324,22 +323,23 @@ final class PaperPhysicalInventoryScanner {
         if (depth >= MAX_NESTING_DEPTH) {
             return;
         }
-        ItemMeta nestedMeta = collector.nestedMetaWithIdentityEvidence(item);
-        if (nestedMeta != null) {
-            scanNested(nestedMeta, location, context, depth, limit);
+        PaperTrackedItemCollector.NestedEvidence evidence =
+                collector.nestedEvidenceWithIdentityEvidence(item);
+        if (evidence != null) {
+            scanNested(evidence, location, context, depth, limit);
         }
     }
 
     private void scanNested(
-            ItemMeta meta,
+            PaperTrackedItemCollector.NestedEvidence evidence,
             LocationDescriptor parent,
             ScanContext context,
             int depth,
             PaperScanLimit limit) {
-        if (meta instanceof BlockStateMeta blockMeta) {
-            scanShulker(blockMeta.getBlockState(), parent, context, depth, limit);
+        if (evidence.meta() instanceof BlockStateMeta) {
+            scanShulker(evidence.blockState(), parent, context, depth, limit);
         }
-        if (meta instanceof BundleMeta bundle) {
+        if (evidence.meta() instanceof BundleMeta bundle) {
             scanBundle(bundle, parent, context, depth, limit);
         }
     }

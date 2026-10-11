@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +126,7 @@ class PaperPhysicalInventoryScannerNestedMoveTest {
         // Once for root identity decoding and once for nested evidence.
         // Previously a third snapshot was taken during nested collection.
         assertEquals(2, item.metadataReads());
+        assertEquals(1, item.blockStateReads(), "Nested collection must reuse evidence snapshot");
         assertEquals(1, observations.get(IDENTITY).size());
         assertEquals(
                 "slot:0/shulker:0",
@@ -147,9 +150,24 @@ class PaperPhysicalInventoryScannerNestedMoveTest {
                 new PaperScanLimit(256));
 
         assertEquals(2, item.metadataReads());
+        assertEquals(1, item.blockStateReads(), "Physical scanning must reuse evidence snapshot");
         assertEquals(1, observed.size());
         assertEquals(IDENTITY, observed.getFirst().identity());
         assertEquals("slot:0/shulker:0", observed.getFirst().location().containerPath());
+    }
+
+    @Test
+    void negativeShulkerEvidenceDoesNotTriggerSecondDecode() {
+        CountingShulkerItem item = countingShulkerContaining(ItemStack.of(Material.STONE));
+        Map<LoreItemIdentity, List<LocationDescriptor>> observations = new ConcurrentHashMap<>();
+
+        new PaperTrackedItemCollector().collectItem(
+                item, LocationDescriptor.Type.BLOCK_CONTAINER,
+                "minecraft:overworld:10:64:10", "slot:0",
+                observations, 0, new PaperScanLimit(256));
+
+        assertEquals(1, item.blockStateReads());
+        assertTrue(observations.isEmpty());
     }
 
     private static CountingShulkerItem countingShulkerContaining(ItemStack nested) {
@@ -165,6 +183,8 @@ class PaperPhysicalInventoryScannerNestedMoveTest {
 
     private static final class CountingShulkerItem extends ItemStack {
         private int metadataReadCount;
+        private int blockStateReadCount;
+        private boolean countBlockStateReads;
 
         CountingShulkerItem() {
             super(Material.SHULKER_BOX);
@@ -173,15 +193,37 @@ class PaperPhysicalInventoryScannerNestedMoveTest {
         @Override
         public ItemMeta getItemMeta() {
             metadataReadCount++;
-            return super.getItemMeta();
+            ItemMeta meta = super.getItemMeta();
+            if (!countBlockStateReads) {
+                return meta;
+            }
+            return (ItemMeta) Proxy.newProxyInstance(
+                    Thread.currentThread().getContextClassLoader(),
+                    new Class<?>[] {BlockStateMeta.class},
+                    (proxy, method, args) -> {
+                        if ("getBlockState".equals(method.getName())) {
+                            blockStateReadCount++;
+                        }
+                        try {
+                            return method.invoke(meta, args);
+                        } catch (InvocationTargetException exception) {
+                            throw exception.getCause();
+                        }
+                    });
         }
 
         int metadataReads() {
             return metadataReadCount;
         }
 
+        int blockStateReads() {
+            return blockStateReadCount;
+        }
+
         void clearMetadataReads() {
             metadataReadCount = 0;
+            blockStateReadCount = 0;
+            countBlockStateReads = true;
         }
     }
 
