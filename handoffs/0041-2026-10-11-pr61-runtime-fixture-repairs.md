@@ -1,0 +1,7 @@
+# Handoff 0041 - runtime gate repairs
+
+- User explicitly authorized fixing failed gates and merging only once good. Production upload/restart remains unrequested.
+- PR61, branch codex/per-item-storage, upstream wsg138/EnthusiaLoreItems. Refreshed current main a8416b57; checkout clean before work. Completed old-head checks exposed three failures: protection, tracking, revision rollout.
+- docs/runtime-fixture-repair.md records FIXTURE-01 through FIXTURE-03, exact failure artifacts and source-backed attachment format. Helper source now owns independent moved stacks, refreshes client inventory and exposes nested roots through inventory events. AcceptanceInventoryMoves isolates the move operation with two regressions. Tracking's build-time source patch removed; committed helper used by all suites. Tracking and rollout frame commands now include block_pos. Removed tracking workflow's permissive generic display fallback; strict entity-kind discovery retained.
+- Java21 full check/plugin shadowJar/helper JAR passed after all changes; 524 JUnit tests passed, seven existing skips. 52 Python tooling tests, unchanged Lizard gate, Node syntax and diff checks passed. Manual review covered assertion preservation, no production identity-rule changes and no database/schema changes. Hosted final-head gates pending.
+- Next: inspect every final-head CI/Codacy result and review thread; fix failures, then merge PR61 with expected-head protection and verify main contains the merged source. Record final CI/merge evidence in PR body. No production activation.

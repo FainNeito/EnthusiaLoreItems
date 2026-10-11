@@ -38,43 +38,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          helper = Path('acceptance-harness/src/main/java/net/enthusia/loreitems/acceptance/WP05AcceptanceHarnessPlugin.java')
-          text = helper.read_text()
-
-          place_anchor = """        ItemStack tracked = takeTrackedStorageItem(player);
-                  placement.accept(tracked);
-                  player.closeInventory();
-          """
-          place_replacement = """        ItemStack tracked = takeTrackedStorageItem(player);
-                  placement.accept(tracked);
-                  if (destination.equals(\"shulker\") || destination.equals(\"bundle\")) {
-                      int offset = destination.equals(\"shulker\") ? 14 : 16;
-                      player.openInventory(chest(player, offset).getBlockInventory());
-                  }
-                  player.closeInventory();
-          """
-          if text.count(place_anchor) != 1:
-              raise SystemExit(f'expected one nested placement synchronization anchor, found {text.count(place_anchor)}')
-          text = text.replace(place_anchor, place_replacement)
-
-          chest_anchor = """        Block block = location.getBlock();
-                  block.setType(Material.CHEST);
-                  if (!(block.getState() instanceof Chest chest)) {
-          """
-          chest_replacement = """        Block block = location.getBlock();
-                  if (block.getType() != Material.CHEST) {
-                      block.setType(Material.CHEST);
-                  }
-                  if (!(block.getState() instanceof Chest chest)) {
-          """
-          if text.count(chest_anchor) != 1:
-              raise SystemExit(f'expected one acceptance chest initialization anchor, found {text.count(chest_anchor)}')
-          text = text.replace(chest_anchor, chest_replacement)
-          helper.write_text(text)
-          PY
 
           gradle --no-daemon :plugin:shadowJar :acceptance-harness:jar -PreleaseVersion=1.0.0-rc.1
 
@@ -150,41 +113,6 @@ jobs:
           track3 = track3.replace(checkpoint, checkpoint + diagnostics)
           script.write_text(prefix + separator + track3)
 
-          bot = Path('acceptance-harness/scripts/wp05-tracking-bot.js')
-          bot_text = bot.read_text()
-          discovery_anchor = """function findDisplayEntity(bot, kind, x, y, z) {
-            const target = new Vec3(x, y, z)
-            const maxDistance = kind === 'armor_stand' ? 3 : 1.5
-            return Object.values(bot.entities)
-              .filter(candidate => displayMatches(candidate, kind))
-              .map(candidate => ({ candidate, distance: candidate.position.distanceTo(target) }))
-              .filter(entry => entry.distance < maxDistance)
-              .sort((left, right) => left.distance - right.distance)[0]?.candidate || null
-          }
-          """
-          discovery_replacement = """function findDisplayEntity(bot, kind, x, y, z) {
-            const target = new Vec3(x, y, z)
-            const maxDistance = kind === 'armor_stand' ? 3 : 1.5
-            const nearby = Object.values(bot.entities)
-              .filter(candidate => candidate && candidate !== bot.entity && candidate.position)
-              .map(candidate => ({ candidate, distance: candidate.position.distanceTo(target) }))
-              .filter(entry => entry.distance < maxDistance)
-              .sort((left, right) => left.distance - right.distance)
-            const named = nearby.find(entry => displayMatches(entry.candidate, kind))
-            if (named) return named.candidate
-            if (kind !== 'item_frame' && kind !== 'glow_item_frame') return null
-            const generic = nearby.find(entry => {
-              const name = String(entry.candidate.name || '').toLowerCase()
-              const type = String(entry.candidate.type || '').toLowerCase()
-              return name !== 'player' && name !== 'item' && name !== 'experience_orb'
-                && type !== 'player' && type !== 'mob'
-            })
-            return generic?.candidate || null
-          }
-          """
-          if bot_text.count(discovery_anchor) != 1:
-              raise SystemExit(f'expected one display discovery anchor, found {bot_text.count(discovery_anchor)}')
-          bot.write_text(bot_text.replace(discovery_anchor, discovery_replacement))
           PY
 
       - name: Execute ACC-TRACK-001 through ACC-TRACK-003
