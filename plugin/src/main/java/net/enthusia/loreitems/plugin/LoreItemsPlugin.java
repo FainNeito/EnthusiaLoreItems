@@ -215,12 +215,11 @@ public final class LoreItemsPlugin extends JavaPlugin {
         PaperTrackedItemProtectionListener protection = null;
         PaperDisplayItemListener display = null;
         try {
-            protection = new PaperTrackedItemProtectionListener(
+            protection = PaperTrackedItemProtectionListener.withStoragePolicy(
                     this,
                     voidLossDelegate::get,
                     () -> configuration.get().current().mutationBudgetPerTick(),
-                    () -> startupConfigurationGate.sharedContainersAllowed(
-                            configuration.get().current()));
+                    () -> startupConfigurationGate.storagePolicy(configuration.get().current()));
             creativeSupport.install(protection);
             display = new PaperDisplayItemListener(
                     this,

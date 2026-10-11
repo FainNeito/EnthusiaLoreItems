@@ -326,16 +326,20 @@ sleep .5
 
 # Empty frame fixtures are deterministic server setup. The real client still moves the tracked item
 # into each display, so PaperItemFrameChangeEvent / PlayerArmorStandManipulateEvent tracking is exercised.
+echo 'fill 71 71 -1 73 73 0 minecraft:air' >&3
+echo 'fill 71 70 -1 73 70 0 minecraft:stone' >&3
 echo 'setblock 72 71 1 minecraft:stone' >&3
-echo 'summon minecraft:item_frame 72.5 71.5 0.96875 {Facing:2b,Tags:["wp05-acceptance"]}' >&3
+echo 'summon minecraft:item_frame 72.5 71.5 0.96875 {Facing:2b,block_pos:[I;72,71,0],Tags:["wp05-acceptance"]}' >&3
 sleep .5
 touch "$ROOT/go-track3-frame"
 wait_marker track3-frame-done 160
 
 echo 'wp05accept perform Wp05TrackBot loreitems give acc_track_world' >&3
 wait_player_copy acc_track_world
+echo 'fill 73 71 -1 75 73 0 minecraft:air' >&3
+echo 'fill 73 70 -1 75 70 0 minecraft:stone' >&3
 echo 'setblock 74 71 1 minecraft:stone' >&3
-echo 'summon minecraft:glow_item_frame 74.5 71.5 0.96875 {Facing:2b,Tags:["wp05-acceptance"]}' >&3
+echo 'summon minecraft:glow_item_frame 74.5 71.5 0.96875 {Facing:2b,block_pos:[I;74,71,0],Tags:["wp05-acceptance"]}' >&3
 sleep .5
 touch "$ROOT/go-track3-glowframe"
 wait_marker track3-glowframe-done 160

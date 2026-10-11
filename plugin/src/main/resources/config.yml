@@ -11,3 +11,16 @@ mutation-budget-per-tick: 16
 
 # This policy is read from the live atomic snapshot and may be hot reloaded.
 shared-containers-allowed: true
+
+# Independent global defaults. "inherit" preserves the legacy shared setting
+# for shulkers/bundles, and defaults to true for ender chests.
+storage-defaults.shulkers: inherit
+storage-defaults.bundles: inherit
+storage-defaults.ender-chests: true
+
+# Per lore-item DEFINITION (all copies), not display name or instance UUID.
+# Keep these as flat dotted keys. Values: true, false, inherit.
+# Omitted destinations inherit the global default. Reload with /loreitems reload.
+# item-storage.11111111-1111-1111-1111-111111111111.shulkers: false
+# item-storage.11111111-1111-1111-1111-111111111111.bundles: false
+# item-storage.11111111-1111-1111-1111-111111111111.ender-chests: true

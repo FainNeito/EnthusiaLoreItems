@@ -15,6 +15,11 @@ final class StartupConfigurationGate {
         published = true;
     }
 
+    net.enthusia.loreitems.application.ItemStoragePolicy storagePolicy(FoundationConfiguration configuration) {
+        return published ? Objects.requireNonNull(configuration).storagePolicy()
+                : net.enthusia.loreitems.application.ItemStoragePolicy.denyAll();
+    }
+
     boolean sharedContainersAllowed(FoundationConfiguration configuration) {
         return published
                 && Objects.requireNonNull(configuration, "configuration").sharedContainersAllowed();

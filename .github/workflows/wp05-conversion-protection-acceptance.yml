@@ -71,7 +71,7 @@ jobs:
           import sqlite3,sys
           try:
               with sqlite3.connect(sys.argv[1]) as c:
-                  row=c.execute("select count(*) from lore_instances i join lore_definitions d on d.definition_id=i.definition_id where d.lookup_key=? and i.lifecycle_state='ACTIVE'",(sys.argv[2],)).fetchone()
+                  row=c.execute("select count(*) from lore_instances i join lore_definitions d on d.definition_id=i.definition_id where d.lookup_key=? and i.lifecycle_state='ACTIVE' and exists (select 1 from pending_mutations m where m.instance_id=i.instance_id and m.mutation_type='ADOPT_HELD_ITEM' and m.state='COMPLETED')",(sys.argv[2],)).fetchone()
                   raise SystemExit(0 if row and row[0]==1 else 1)
           except sqlite3.OperationalError:raise SystemExit(1)
           PY

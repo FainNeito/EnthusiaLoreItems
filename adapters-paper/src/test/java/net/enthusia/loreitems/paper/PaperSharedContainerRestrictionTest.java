@@ -150,6 +150,136 @@ class PaperSharedContainerRestrictionTest {
         assertFalse(event.isCancelled());
     }
 
+    @Test
+    void perDefinitionDenyOverridesAllowedGlobalAndAllowsRemoval() {
+        setPolicy(true, false);
+        Inventory chest = server.createInventory(null, InventoryType.ENDER_CHEST);
+        InventoryView view = player.openInventory(chest);
+        player.setItemOnCursor(trackedItem());
+        InventoryClickEvent insert = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                0, ClickType.LEFT, InventoryAction.PLACE_ALL);
+        listener.onSharedContainerClick(insert);
+        assertTrue(insert.isCancelled());
+        chest.setItem(0, trackedItem());
+        player.setItemOnCursor(ItemStack.empty());
+        InventoryClickEvent remove = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                0, ClickType.LEFT, InventoryAction.PICKUP_ALL);
+        listener.onSharedContainerClick(remove);
+        assertFalse(remove.isCancelled());
+    }
+
+    @Test
+    void nestedBundleCannotBypassEnderChestDeny() {
+        setPolicy(true, false);
+        Inventory chest = server.createInventory(null, InventoryType.ENDER_CHEST);
+        InventoryView view = player.openInventory(chest);
+        player.setItemOnCursor(bundleContaining(trackedItem()));
+        InventoryClickEvent event = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                0, ClickType.LEFT, InventoryAction.PLACE_ALL);
+        listener.onSharedContainerClick(event);
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void explicitAllowOverridesDeniedDefaultForEveryCopyOfDefinition() {
+        setPolicy(false, true);
+        Inventory chest = server.createInventory(null, InventoryType.SHULKER_BOX);
+        InventoryView view = player.openInventory(chest);
+        player.setItemOnCursor(trackedItem());
+        InventoryClickEvent event = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                0, ClickType.LEFT, InventoryAction.PLACE_ALL);
+        listener.onSharedContainerClick(event);
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void offhandSwapIntoEnderChestCannotBypassDeny() {
+        setPolicy(true, false);
+        InventoryView view = player.openInventory(server.createInventory(null, InventoryType.ENDER_CHEST));
+        player.getInventory().setItemInOffHand(trackedItem());
+        InventoryClickEvent event = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                0, ClickType.SWAP_OFFHAND, InventoryAction.HOTBAR_SWAP);
+        listener.onSharedContainerClick(event);
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void shiftClickIntoEnderChestCannotBypassDeny() {
+        setPolicy(true, false);
+        InventoryView view = player.openInventory(server.createInventory(null, InventoryType.ENDER_CHEST));
+        player.getInventory().setItem(9, trackedItem());
+        InventoryClickEvent event = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                27, ClickType.SHIFT_LEFT, InventoryAction.MOVE_TO_OTHER_INVENTORY);
+        event.setCurrentItem(trackedItem());
+        listener.onSharedContainerClick(event);
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void dragIntoEnderChestCannotBypassDeny() {
+        setPolicy(true, false);
+        InventoryView view = player.openInventory(server.createInventory(null, InventoryType.ENDER_CHEST));
+        org.bukkit.event.inventory.InventoryDragEvent event = new org.bukkit.event.inventory.InventoryDragEvent(
+                view, ItemStack.empty(), trackedItem(), false, java.util.Map.of(0, trackedItem()));
+        listener.onSharedContainerDrag(event);
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void hopperIntoShulkerCannotBypassDeny() {
+        setPolicy(true, false);
+        org.bukkit.event.inventory.InventoryMoveItemEvent event = new org.bukkit.event.inventory.InventoryMoveItemEvent(
+                server.createInventory(null, 9), trackedItem(),
+                server.createInventory(null, InventoryType.SHULKER_BOX), true);
+        listener.onStorageMove(event);
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void nestedShulkerCannotBypassEnderChestDeny() {
+        setPolicy(true, false);
+        ItemStack shulkerItem = ItemStack.of(Material.SHULKER_BOX);
+        var meta = (org.bukkit.inventory.meta.BlockStateMeta) shulkerItem.getItemMeta();
+        var shulker = (org.bukkit.block.ShulkerBox) meta.getBlockState();
+        shulker.getInventory().setItem(0, trackedItem());
+        meta.setBlockState(shulker);
+        shulkerItem.setItemMeta(meta);
+        InventoryView view = player.openInventory(server.createInventory(null, InventoryType.ENDER_CHEST));
+        player.setItemOnCursor(shulkerItem);
+        InventoryClickEvent event = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                0, ClickType.LEFT, InventoryAction.PLACE_ALL);
+        listener.onSharedContainerClick(event);
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void deepAmbiguousInsertionIsRejectedWithinBudget() {
+        setPolicy(true, true);
+        ItemStack item = trackedItem();
+        for (int depth = 0; depth < 10; depth++) {
+            item = bundleContaining(item);
+        }
+        InventoryView view = player.openInventory(server.createInventory(null, InventoryType.ENDER_CHEST));
+        player.setItemOnCursor(item);
+        InventoryClickEvent event = new InventoryClickEvent(view, InventoryType.SlotType.CONTAINER,
+                0, ClickType.LEFT, InventoryAction.PLACE_ALL);
+        listener.onSharedContainerClick(event);
+        assertTrue(event.isCancelled());
+    }
+
+    private void setPolicy(boolean defaultsAllowed, boolean overrideAllowed) {
+        listener.close();
+        var rules = java.util.Map.of(
+                net.enthusia.loreitems.application.ItemStoragePolicy.Container.SHULKER, overrideAllowed,
+                net.enthusia.loreitems.application.ItemStoragePolicy.Container.BUNDLE, overrideAllowed,
+                net.enthusia.loreitems.application.ItemStoragePolicy.Container.ENDER_CHEST, overrideAllowed);
+        var policy = new net.enthusia.loreitems.application.ItemStoragePolicy(
+                defaultsAllowed, defaultsAllowed, defaultsAllowed,
+                java.util.Map.of(IDENTITY.definitionId().value(), rules));
+        listener = PaperTrackedItemProtectionListener.withStoragePolicy(plugin, NoOpVoidLossUseCase::new,
+                () -> 4, () -> policy);
+    }
+
     private ItemStack trackedItem() {
         return identityCodec.writeIdentity(ItemStack.of(Material.DIAMOND_SWORD), IDENTITY);
     }

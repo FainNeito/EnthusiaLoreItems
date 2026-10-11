@@ -42,3 +42,12 @@ Read [`CURRENT.md`](CURRENT.md) first. This index is for history and targeted re
 | 0036 | 2026-08-05 | Implementation PR 4 / PR #9 | Ready for review | [Natural entity template updates](0036-2026-08-05-pr9-natural-entity-template-updates.md) |
 
 Append one row for every new immutable report. Do not remove historical entries when a phase or PR is completed.
+- [0037 — Per-item storage policies (c584c6ab)](0037-2026-10-11-pr61-per-item-storage.md)
+- [0038 - Storage review refinement](0038-2026-10-11-pr61-storage-review-refinement.md)
+- [0039 - Immutable copy refinement](0039-2026-10-11-pr61-immutable-copy-refinement.md)
+- [0040 - Protection client synchronization](0040-2026-10-11-pr61-protection-client-wait.md)
+- [0041 - Runtime gate repairs](0041-2026-10-11-pr61-runtime-fixture-repairs.md)
+- [0042 - Protection and adoption fixture boundaries](0042-2026-10-11-pr61-protection-and-adoption-fixtures.md)
+- [0043 - Server-authoritative test client inventory](0043-2026-10-11-pr61-authoritative-client-inventory.md)
+- [0044 - Normal inventory drop fixture](0044-2026-10-11-pr61-normal-inventory-drop.md)
+- [0045 - Exact delivery and clear frame fixture space](0045-2026-10-11-pr61-delivery-and-frame-space.md)

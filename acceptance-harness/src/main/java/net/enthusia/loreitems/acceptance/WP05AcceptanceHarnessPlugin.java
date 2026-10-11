@@ -159,6 +159,7 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin implements Lis
             default -> throw new IllegalArgumentException("unknown source kind " + arguments[2]);
         };
         player.getInventory().setItemInMainHand(item);
+        player.updateInventory();
         log("SOURCE", player, arguments[2], describe(item));
         sender.sendMessage("WP05_ACCEPT SOURCE ok player=" + player.getName()
                 + " kind=" + arguments[2]);
@@ -189,9 +190,15 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin implements Lis
         if (placement == null) {
             throw new IllegalArgumentException("unknown destination " + destination);
         }
-        ItemStack tracked = takeTrackedStorageItem(player);
+        ItemStack tracked = AcceptanceInventoryMoves.takeTrackedStorageItem(player,
+                WP05AcceptanceHarnessPlugin::hasIdentity);
         placement.accept(tracked);
+        if (destination.equals("shulker") || destination.equals("bundle")) {
+            int offset = destination.equals("shulker") ? 14 : 16;
+            player.openInventory(chest(player, offset).getBlockInventory());
+        }
         player.closeInventory();
+        player.updateInventory();
         log("PLACE", player, destination, describe(tracked));
         sender.sendMessage("WP05_ACCEPT PLACE ok player=" + player.getName()
                 + " destination=" + destination);
@@ -392,7 +399,9 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin implements Lis
     private Chest chest(Player player, int offset) {
         Location location = testBase(player).add(offset, 0.0, 0.0);
         Block block = location.getBlock();
-        block.setType(Material.CHEST);
+        if (block.getType() != Material.CHEST) {
+            block.setType(Material.CHEST);
+        }
         if (!(block.getState() instanceof Chest chest)) {
             throw new IllegalStateException("acceptance chest did not initialize");
         }
@@ -437,20 +446,6 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin implements Lis
             throw new IllegalArgumentException("player is not online: " + name);
         }
         return player;
-    }
-
-    private static ItemStack takeTrackedStorageItem(Player player) {
-        PlayerInventory inventory = player.getInventory();
-        ItemStack[] storageContents = Objects.requireNonNull(
-                inventory.getStorageContents(), "player storage contents");
-        for (int slot = 0; slot < storageContents.length; slot++) {
-            ItemStack item = storageContents[slot];
-            if (item != null && hasIdentity(item)) {
-                inventory.setItem(slot, null);
-                return item;
-            }
-        }
-        throw new IllegalStateException("no tracked item in player storage");
     }
 
     private static ItemStack requireTrackedStorageItem(Player player) {

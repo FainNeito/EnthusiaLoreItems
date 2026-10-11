@@ -21,7 +21,7 @@ public final class AtomicConfiguration {
             if (!existing.hasSameRestartRequiredSettings(candidate)) {
                 return new ReloadResult(
                         false,
-                        "Only shared-containers-allowed is hot reloadable; database, delivery, "
+                        "Only storage policies are hot reloadable; database, delivery, "
                                 + "warning, paging, and worker-budget settings require a restart.");
             }
             if (snapshot.compareAndSet(existing, candidate)) {

@@ -252,7 +252,7 @@ Parse configuration into immutable validated records. Reload builds and validate
 
 Configuration should include:
 
-- shared shulker/bundle restriction, default false;
+- independent storage defaults and per-definition shulker/bundle/ender-chest overrides, with legacy shared policy fallback;
 - staff duplicate-warning interval, default five minutes;
 - queue and per-tick budgets with safe bounds;
 - database busy timeout and maintenance settings;
