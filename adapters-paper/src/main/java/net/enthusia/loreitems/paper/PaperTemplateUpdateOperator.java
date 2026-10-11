@@ -186,6 +186,7 @@ public final class PaperTemplateUpdateOperator {
             PreparedTemplateUpdate update) {
         ItemStack desired = templateCodec.decode(update.targetTemplate());
         ItemStack withContents = preserveMutableContents(current, desired);
+        PaperSignaturePreservation.preserve(current, withContents);
         return identityCodec.writeIdentity(withContents, update.targetIdentity());
     }
 

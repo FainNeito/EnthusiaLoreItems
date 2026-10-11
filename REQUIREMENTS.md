@@ -64,7 +64,7 @@ The plugin must provide simple administrative GUIs backed by chat input for text
 
 There must also be an advanced `replace template from held item` operation. This provides an exact-copy path when the GUI does not expose a new or unusual Minecraft component.
 
-Editing a definition changes every existing instance. The plugin must increment the template revision and create durable queued update work. It must update currently accessible instances through bounded work and update offline-player, unloaded-container, and otherwise inaccessible instances when they are naturally encountered. It must not force-load chunks or perform one large synchronous rewrite.
+Editing a definition changes every existing instance. A template update keeps an EnthusiaSignature signature on the instance: data under the `itemsignature` namespace and the lore lines tagged `itemsignature:managed` are carried onto the rebuilt item, after the template lore. The plugin must increment the template revision and create durable queued update work. It must update currently accessible instances through bounded work and update offline-player, unloaded-container, and otherwise inaccessible instances when they are naturally encountered. It must not force-load chunks or perform one large synchronous rewrite.
 
 ## 5. Protection and permitted movement
 
