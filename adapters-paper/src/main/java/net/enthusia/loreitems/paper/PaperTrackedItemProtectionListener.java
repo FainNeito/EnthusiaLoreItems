@@ -14,7 +14,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 import net.enthusia.loreitems.application.ItemIdentityReadResult;
 import net.enthusia.loreitems.application.VoidLossUseCase;
@@ -43,7 +42,6 @@ import org.bukkit.event.entity.ItemMergeEvent;
 import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.event.inventory.BrewEvent;
 import org.bukkit.event.inventory.BrewingStandFuelEvent;
-import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.FurnaceBurnEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCreativeEvent;
@@ -271,11 +269,11 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSharedContainerClick(InventoryClickEvent event) {
         if (!sharedContainersAllowed()
-                && insertsRestricted(event, SHARED_CONTAINER_TYPES, this::hasLoreIdentityEvidenceInTree)) {
+                && PaperContainerInsertion.insertsRestricted(event, SHARED_CONTAINER_TYPES, this::hasLoreIdentityEvidenceInTree)) {
             event.setCancelled(true);
             return;
         }
-        if (insertsRestricted(event, STORAGE_LOCK_CONTAINER_TYPES, itemCollector::hasStorageLockInTree)) {
+        if (PaperContainerInsertion.insertsRestricted(event, STORAGE_LOCK_CONTAINER_TYPES, itemCollector::hasStorageLockInTree)) {
             event.setCancelled(true);
         }
     }
@@ -283,65 +281,17 @@ public final class PaperTrackedItemProtectionListener implements Listener, AutoC
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSharedContainerDrag(InventoryDragEvent event) {
         if (!sharedContainersAllowed()
-                && dragsRestricted(event, SHARED_CONTAINER_TYPES, this::hasLoreIdentityEvidenceInTree)) {
+                && PaperContainerInsertion.dragsRestricted(event, SHARED_CONTAINER_TYPES, this::hasLoreIdentityEvidenceInTree)) {
             event.setCancelled(true);
             return;
         }
-        if (dragsRestricted(event, STORAGE_LOCK_CONTAINER_TYPES, itemCollector::hasStorageLockInTree)) {
+        if (PaperContainerInsertion.dragsRestricted(event, STORAGE_LOCK_CONTAINER_TYPES, itemCollector::hasStorageLockInTree)) {
             event.setCancelled(true);
         }
-    }
-
-    private static boolean insertsRestricted(
-            InventoryClickEvent event, Set<InventoryType> containerTypes, Predicate<ItemStack> restricted) {
-        Inventory top = event.getView().getTopInventory();
-        if (containerTypes.contains(top.getType())
-                && wouldInsertIntoTopInventory(event, top.getSize(), restricted)) {
-            return true;
-        }
-        ItemStack current = event.getCurrentItem();
-        ItemStack cursor = event.getCursor();
-        return (isBundle(current) && restricted.test(cursor))
-                || (isBundle(cursor) && restricted.test(current));
-    }
-
-    private static boolean dragsRestricted(
-            InventoryDragEvent event, Set<InventoryType> containerTypes, Predicate<ItemStack> restricted) {
-        if (!containerTypes.contains(event.getView().getTopInventory().getType())
-                || !restricted.test(event.getOldCursor())) {
-            return false;
-        }
-        int topSize = event.getView().getTopInventory().getSize();
-        return event.getRawSlots().stream().anyMatch(slot -> slot >= 0 && slot < topSize);
-    }
-
-    private static boolean wouldInsertIntoTopInventory(
-            InventoryClickEvent event, int topSize, Predicate<ItemStack> restricted) {
-        int rawSlot = event.getRawSlot();
-        if (rawSlot >= 0 && rawSlot < topSize) {
-            if (restricted.test(event.getCursor())) {
-                return true;
-            }
-            if (event.getClick() == ClickType.SWAP_OFFHAND) {
-                return restricted.test(event.getWhoClicked().getInventory().getItemInOffHand());
-            }
-            int hotbarButton = event.getHotbarButton();
-            return hotbarButton >= 0
-                    && restricted.test(event.getWhoClicked().getInventory().getItem(hotbarButton));
-        }
-        return event.isShiftClick() && restricted.test(event.getCurrentItem());
     }
 
     private boolean sharedContainersAllowed() {
         return sharedContainersAllowedSupplier.getAsBoolean();
-    }
-
-    private static boolean isBundle(ItemStack item) {
-        if (item == null || item.getType().isAir()) {
-            return false;
-        }
-        String material = item.getType().name();
-        return material.equals("BUNDLE") || material.endsWith("_BUNDLE");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
