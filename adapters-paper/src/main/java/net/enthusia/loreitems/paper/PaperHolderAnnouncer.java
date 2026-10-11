@@ -120,27 +120,27 @@ public final class PaperHolderAnnouncer implements Listener, AutoCloseable {
         }
         long remaining = holder.announcedAt + COOLDOWN.toMillis() - nowMillis.getAsLong();
         if (holder.announcedId == null || remaining <= 0) {
-            announce(instanceId, holder, playerId, player.getName(), itemName);
+            announce(holder, playerId, player.getName(), itemName);
             return;
         }
         holder.pendingId = playerId;
         holder.pendingName = player.getName();
         holder.itemName = itemName;
         holder.task = plugin.getServer().getScheduler().runTaskLater(
-                plugin, () -> flush(instanceId, holder), remaining / MILLIS_PER_TICK + 1);
+                plugin, () -> flush(holder), remaining / MILLIS_PER_TICK + 1);
     }
 
-    private void flush(UUID instanceId, Holder holder) {
+    private void flush(Holder holder) {
         UUID pendingId = holder.pendingId;
         String pendingName = holder.pendingName;
         holder.task = null;
         holder.pendingId = null;
         if (!closed && pendingId != null && !pendingId.equals(holder.announcedId)) {
-            announce(instanceId, holder, pendingId, pendingName, holder.itemName);
+            announce(holder, pendingId, pendingName, holder.itemName);
         }
     }
 
-    private void announce(UUID instanceId, Holder holder, UUID playerId, String playerName, String itemName) {
+    private void announce(Holder holder, UUID playerId, String playerName, String itemName) {
         holder.announcedId = playerId;
         holder.announcedAt = nowMillis.getAsLong();
         Component message = MiniMessage.miniMessage().deserialize(
