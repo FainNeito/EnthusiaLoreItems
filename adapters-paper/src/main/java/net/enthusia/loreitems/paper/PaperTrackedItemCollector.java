@@ -7,6 +7,7 @@ import java.util.Objects;
 import net.enthusia.loreitems.application.ItemIdentityReadResult;
 import net.enthusia.loreitems.application.LoreItemIdentity;
 import net.enthusia.loreitems.domain.LocationDescriptor;
+import org.bukkit.Material;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.ShulkerBox;
 import org.bukkit.inventory.ItemStack;
@@ -82,7 +83,8 @@ final class PaperTrackedItemCollector {
 
     /** Reuse the same shulker snapshot for evidence and subsequent traversal. */
     NestedEvidence nestedEvidenceWithIdentityEvidence(ItemStack item) {
-        if (item == null || item.getType().isAir() || !item.hasItemMeta()) {
+        if (item == null || item.getType().isAir()
+                || !canHaveNestedContents(item.getType()) || !item.hasItemMeta()) {
             return null;
         }
         ItemMeta meta = item.getItemMeta();
@@ -115,6 +117,7 @@ final class PaperTrackedItemCollector {
             return true;
         }
         return depth < MAX_NESTING_DEPTH
+                && canHaveNestedContents(item.getType())
                 && item.hasItemMeta()
                 && hasNestedIdentityEvidence(item.getItemMeta(), depth);
     }
@@ -221,6 +224,12 @@ final class PaperTrackedItemCollector {
                     depth + 1,
                     limit);
         }
+    }
+
+    /** Only shulker boxes and bundles can contain the nested items we inspect. */
+    private static boolean canHaveNestedContents(Material material) {
+        String name = material.name();
+        return name.endsWith("SHULKER_BOX") || name.endsWith("BUNDLE");
     }
 
     private static boolean scannable(ItemStack item) {
