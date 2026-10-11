@@ -14,16 +14,21 @@ public record ItemStoragePolicy(
     public enum Container { SHULKER, BUNDLE, ENDER_CHEST }
     public static final int MAX_OVERRIDES = 1_024;
 
-    // The mutable copy is constructor-local; only deeply immutable maps are published.
-    @SuppressWarnings("PMD.UseConcurrentHashMap")
     public ItemStoragePolicy {
         Objects.requireNonNull(overrides, "overrides");
         if (overrides.size() > MAX_OVERRIDES) {
             throw new IllegalArgumentException("At most 1024 item storage overrides are supported");
         }
+        overrides = copyOverrides(overrides);
+    }
+
+    // The mutable copy is method-local; only deeply immutable maps are published.
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
+    private static Map<UUID, Map<Container, Boolean>> copyOverrides(
+            Map<UUID, Map<Container, Boolean>> overrides) {
         Map<UUID, Map<Container, Boolean>> copied = new HashMap<>();
         overrides.forEach((id, values) -> copied.put(Objects.requireNonNull(id), Map.copyOf(values)));
-        overrides = Map.copyOf(copied);
+        return Map.copyOf(copied);
     }
 
     public static ItemStoragePolicy legacy(boolean sharedAllowed) {
