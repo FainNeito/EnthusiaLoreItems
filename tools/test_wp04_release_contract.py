@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -57,7 +58,9 @@ class Wp04ReleaseContractTest(unittest.TestCase):
     def test_patch_version_is_source_controlled_and_cli_override_cannot_change_artifact_identity(self):
         properties = (ROOT / "gradle.properties").read_text()
         build = (ROOT / "build.gradle.kts").read_text()
-        self.assertIn("releaseVersion=1.0.1", properties)
+        release_versions = re.findall(r"^releaseVersion=(.+)$", properties, re.MULTILINE)
+        self.assertEqual(1, len(release_versions))
+        self.assertRegex(release_versions[0], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         self.assertIn('rootDir.resolve("gradle.properties")', build)
         self.assertIn('sourceReleaseVersion', build)
         self.assertIn('Ignoring -PreleaseVersion=', build)
@@ -85,7 +88,7 @@ class Wp04ReleaseContractTest(unittest.TestCase):
         resolver = (ROOT / ".github/scripts/resolve_release_publication_state.sh").read_text()
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         strict_semver = (
-            "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\."
+            "^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\."
             "(0|[1-9][0-9]*)$"
         )
         self.assert_production_version_resolution(release, strict_semver)
@@ -226,9 +229,15 @@ class Wp04ReleaseContractTest(unittest.TestCase):
         ]
 
     def test_patch_release_notes_and_rollback_are_present(self):
+        properties = (ROOT / "gradle.properties").read_text()
+        version = re.search(r"^releaseVersion=(.+)$", properties, re.MULTILINE)
+        self.assertIsNotNone(version)
         for source in [
             "docs/releases/v1.0.1.md",
             "docs/releases/v1.0.1-rollback.md",
+            f"docs/releases/v{version.group(1)}.md",
+            f"docs/releases/v{version.group(1)}-rollback.md",
+            f"docs/releases/v{version.group(1)}-approval.txt",
         ]:
             self.assertTrue((ROOT / source).is_file(), source)
 

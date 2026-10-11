@@ -1,0 +1,7 @@
+# EnthusiaLoreItems 1.0.2 production release approval
+
+This deliberately starts NOT_APPROVED. The source-controlled gate must only change to APPROVED after an independent review of the exact final build hash, complete workflow evidence, required Sentinel restart, live-environment preflight and owner release authorization. The current published v1.0.1 artifacts are immutable and cannot be used as approval for a changed 1.0.2 binary.
+
+release_ready: NOT_APPROVED
+release_version: 1.0.2
+release_jar_sha256: PENDING_EXACT_HEAD_BUILD
