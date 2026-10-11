@@ -105,12 +105,12 @@ final class PaperBlockInventoryTracking {
             return;
         }
         snapshot.ifPresent(reference -> reference.resolve(plugin).ifPresent(inventory ->
-                identities.forEach(identity -> scanner.submitMatchingIdentity(
+                scanner.submitMatchingIdentities(
                         inventory,
                         reference.type(),
                         reference.key(),
-                        identity,
-                        source))));
+                        identities,
+                        source)));
     }
 
     private void scanBlockInventory(

@@ -109,9 +109,34 @@ final class PaperPhysicalInventoryScanner {
             String key,
             LoreItemIdentity identity,
             String source) {
-        MatchingLocations matching = matchingLocations(inventory, type, key, identity);
-        List<LocationDescriptor> matches = matching.locations();
-        TrackingObservationUseCase.EvidenceMode mode = matching.scanWithinBudget()
+        submitMatchingIdentities(inventory, type, key, Set.of(identity), source);
+    }
+
+    /** One bounded destination snapshot serves every identity from the same move. */
+    void submitMatchingIdentities(
+            Inventory inventory,
+            LocationDescriptor.Type type,
+            String key,
+            Set<LoreItemIdentity> identities,
+            String source) {
+        Objects.requireNonNull(identities, "identities");
+        if (identities.isEmpty()) {
+            return;
+        }
+        MatchingLocations matching = matchingLocations(inventory, type, key);
+        identities.forEach(identity -> submitMatches(
+                identity,
+                matching.observations().getOrDefault(identity, List.of()),
+                matching.scanWithinBudget(),
+                source));
+    }
+
+    private void submitMatches(
+            LoreItemIdentity identity,
+            List<LocationDescriptor> matches,
+            boolean scanWithinBudget,
+            String source) {
+        TrackingObservationUseCase.EvidenceMode mode = scanWithinBudget
                         && matches.size() == 1
                 ? TrackingObservationUseCase.EvidenceMode.AUTHORITATIVE_TRANSITION
                 : TrackingObservationUseCase.EvidenceMode.RECONCILIATION;
@@ -362,8 +387,7 @@ final class PaperPhysicalInventoryScanner {
     private MatchingLocations matchingLocations(
             Inventory inventory,
             LocationDescriptor.Type type,
-            String key,
-            LoreItemIdentity identity) {
+            String key) {
         Map<LoreItemIdentity, List<LocationDescriptor>> observations = new ConcurrentHashMap<>();
         PaperScanLimit limit = new PaperScanLimit(MAX_ITEMS_PER_SCAN);
         collector.collectArray(
@@ -373,9 +397,7 @@ final class PaperPhysicalInventoryScanner {
                 SLOT_PREFIX,
                 observations,
                 limit);
-        return new MatchingLocations(
-                List.copyOf(observations.getOrDefault(identity, List.of())),
-                limit.hasRemaining());
+        return new MatchingLocations(observations, limit.hasRemaining());
     }
 
     private static boolean scannable(ItemStack item) {
@@ -401,7 +423,7 @@ final class PaperPhysicalInventoryScanner {
     }
 
     private record MatchingLocations(
-            List<LocationDescriptor> locations,
+            Map<LoreItemIdentity, List<LocationDescriptor>> observations,
             boolean scanWithinBudget) {}
 
     private record ScanContext(
