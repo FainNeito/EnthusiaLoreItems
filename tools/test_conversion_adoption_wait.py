@@ -9,7 +9,10 @@ from pathlib import Path
 class ConversionAdoptionWaitTest(unittest.TestCase):
     def test_active_but_prepared_item_does_not_release_fixture(self):
         workflow = Path(__file__).resolve().parents[1] / ".github/workflows/wp05-conversion-protection-acceptance.yml"
-        query = re.search(r'row=c.execute\("([^"]+)"', workflow.read_text(encoding="utf8")).group(1)
+        match = re.search(r'row=c.execute\("([^"]+)"', workflow.read_text(encoding="utf8"))
+        if match is None:
+            raise AssertionError("Conversion fixture adoption query is missing")
+        query = match.group(1)
         with sqlite3.connect(":memory:") as database:
             database.executescript("""
                 create table lore_definitions(definition_id text, lookup_key text);

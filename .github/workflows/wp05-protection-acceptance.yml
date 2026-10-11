@@ -38,6 +38,8 @@ jobs:
           ROOT=/tmp/wp05-protection;mkdir -p "$ROOT/server/plugins/EnthusiaLoreItems" "$ROOT/evidence" "$ROOT/bot"
           PLUGIN_JAR="$(find plugin/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*'|head -n1)";HARNESS_JAR="$(find acceptance-harness/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*'|head -n1)"
           cp "$PLUGIN_JAR" "$ROOT/server/plugins/EnthusiaLoreItems.jar";cp "$HARNESS_JAR" "$ROOT/server/plugins/WP05AcceptanceHarness.jar";sha256sum "$PLUGIN_JAR">"$ROOT/evidence/plugin-sha256.txt";sha256sum "$HARNESS_JAR">"$ROOT/evidence/harness-sha256.txt";printf '%s\n' "${{ github.event.pull_request.head.sha || github.sha }}">"$ROOT/evidence/source-head.txt";java -version 2>"$ROOT/evidence/java-version.txt"
+          cp acceptance-harness/scripts/mineflayer-inventory-sync.js "$ROOT/bot/inventory-sync.js"
+          node --test acceptance-harness/scripts/mineflayer-inventory-sync.test.js
           cd "$ROOT/server";curl -fsSL "$PAPER_URL" -o paper.jar;echo "$PAPER_SHA256  paper.jar"|sha256sum -c -;printf 'eula=true\n'>eula.txt
           cat >server.properties <<'EOF'
           online-mode=false
@@ -51,6 +53,7 @@ jobs:
           cat >bot.js <<'EOF'
           const mineflayer=require('mineflayer'),fs=require('fs'),root='/tmp/wp05-protection',sleep=ms=>new Promise(r=>setTimeout(r,ms))
           const log=x=>{fs.appendFileSync(`${root}/evidence/bot.log`,`${new Date().toISOString()} ${x}\n`);console.log(x)},bot=mineflayer.createBot({host:'127.0.0.1',port:25565,username:'Wp05Protect',version:'1.21.11',auth:'offline'}),item=name=>bot.inventory.items().find(i=>i.name===name)
+          require('./inventory-sync')(bot,require('prismarine-item')('1.21.11'))
           async function waitFile(p){for(let i=0;i<900;i++){if(fs.existsSync(p))return;await sleep(100)}throw new Error(`marker timeout ${p}`)}
           async function waitSword(marker){for(let i=0;i<150;i++){const sword=item('diamond_sword');if(sword)return sword;await sleep(100)}throw new Error(`drop sword missing ${marker}`)}
           async function dropSword(marker){
