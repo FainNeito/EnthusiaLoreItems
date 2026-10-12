@@ -19,6 +19,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** Disposable real-Paper reference probe, excluded from the production plugin JAR. */
 @SuppressWarnings({"PMD.UseProperClassLoader", "PMD.AvoidAccessibilityAlteration"})
 final class InventoryReferenceProbe {
+    private static final int UPDATED_STACK_AMOUNT = 7;
     private InventoryReferenceProbe() { }
 
     static void start(JavaPlugin harness) {
@@ -38,7 +39,11 @@ final class InventoryReferenceProbe {
         capture.setAccessible(true);
         resolve.setAccessible(true);
         World world = Objects.requireNonNull(Bukkit.getWorld("world"));
+        List<Long> before = new ArrayList<>();
+        List<Long> after = new ArrayList<>();
         for (Material material : List.of(Material.CHEST, Material.HOPPER)) {
+            before.clear();
+            after.clear();
             org.bukkit.block.Block block = world.getBlockAt(4, 200, material == Material.CHEST ? 4 : 6);
             block.setType(material);
             Inventory inventory = ((Container) block.getState(false)).getInventory();
@@ -46,8 +51,6 @@ final class InventoryReferenceProbe {
             for (int slot = 0; slot < inventory.getSize(); slot++) {
                 inventory.setItem(slot, shulker);
             }
-            List<Long> before = new ArrayList<>();
-            List<Long> after = new ArrayList<>();
             for (int iteration = 0; iteration < 100; iteration++) {
                 long start = System.nanoTime();
                 inventory.getHolder();
@@ -63,9 +66,9 @@ final class InventoryReferenceProbe {
                 }
             }
             Object reference = ((Optional<?>) capture.invoke(null, inventory)).orElseThrow();
-            inventory.setItem(0, ItemStack.of(Material.DIAMOND, 7));
+            inventory.setItem(0, ItemStack.of(Material.DIAMOND, UPDATED_STACK_AMOUNT));
             Inventory fresh = (Inventory) ((Optional<?>) resolve.invoke(reference, plugin)).orElseThrow();
-            if (Objects.requireNonNull(fresh.getItem(0)).getAmount() != 7) {
+            if (Objects.requireNonNull(fresh.getItem(0)).getAmount() != UPDATED_STACK_AMOUNT) {
                 throw new IllegalStateException("Reference retained stale contents");
             }
             report(harness, material, before, after);
