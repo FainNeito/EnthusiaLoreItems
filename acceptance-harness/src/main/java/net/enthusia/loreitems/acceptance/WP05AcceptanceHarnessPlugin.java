@@ -105,6 +105,7 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin {
                 Map.entry("damage", this::damage),
                 Map.entry("api", this::api),
                 Map.entry("dump", this::dump),
+                Map.entry("referenceprobe", (sender, ignored) -> InventoryReferenceProbe.start(this)),
                 Map.entry("view", this::view),
                 Map.entry("cleanup", (sender, ignored) -> cleanup(sender)));
     }
