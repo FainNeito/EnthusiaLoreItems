@@ -265,7 +265,7 @@ final class PaperIdentityObservationScanner implements AutoCloseable {
     }
 
     static LocationDescriptor inventoryLocation(Inventory inventory, String path) {
-        InventoryHolder holder = inventory.getHolder();
+        InventoryHolder holder = inventory.getHolder(false);
         if (holder instanceof Player player) {
             LocationDescriptor.Type type = inventory.getType() == InventoryType.ENDER_CHEST
                     ? LocationDescriptor.Type.PLAYER_ENDER_CHEST

@@ -112,6 +112,7 @@ public final class WP05AcceptanceHarnessPlugin extends JavaPlugin implements Lis
                 Map.entry("dump", this::dump),
                 Map.entry("chunkstatus", this::chunkStatus),
                 Map.entry("shulkerprobe", (sender, ignored) -> ShulkerDiscoveryProbe.start(this)),
+                Map.entry("referenceprobe", (sender, ignored) -> InventoryReferenceProbe.start(this)),
                 Map.entry("view", this::view),
                 Map.entry("cleanup", (sender, ignored) -> cleanup(sender)));
     }

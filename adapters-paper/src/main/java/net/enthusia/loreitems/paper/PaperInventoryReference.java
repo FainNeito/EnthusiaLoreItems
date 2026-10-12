@@ -25,7 +25,8 @@ sealed interface PaperInventoryReference
         if (inventory == null) {
             return Optional.empty();
         }
-        InventoryHolder holder = inventory.getHolder();
+        // Only identity is needed here; snapshots serialize the entire block inventory.
+        InventoryHolder holder = inventory.getHolder(false);
         if (holder instanceof Player player) {
             return Optional.of(inventory instanceof PlayerInventory
                     ? new PlayerMain(player.getUniqueId())
@@ -76,7 +77,8 @@ sealed interface PaperInventoryReference
             if (world == null || !world.isChunkLoaded(x >> 4, z >> 4)) {
                 return Optional.empty();
             }
-            BlockState state = world.getBlockAt(x, y, z).getState();
+            // Resolve fresh live contents, without copying/serializing the block entity.
+            BlockState state = world.getBlockAt(x, y, z).getState(false);
             return state instanceof InventoryHolder holder
                     ? Optional.of(holder.getInventory())
                     : Optional.empty();
