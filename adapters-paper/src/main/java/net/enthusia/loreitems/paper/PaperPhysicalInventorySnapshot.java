@@ -19,7 +19,7 @@ record PaperPhysicalInventorySnapshot(
         if (reference.isEmpty()) {
             return Optional.empty();
         }
-        InventoryHolder holder = inventory.getHolder();
+        InventoryHolder holder = inventory.getHolder(false);
         if (holder instanceof Player player) {
             boolean main = inventory instanceof PlayerInventory;
             return Optional.of(new PaperPhysicalInventorySnapshot(

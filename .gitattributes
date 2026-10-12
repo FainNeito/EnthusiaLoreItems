@@ -1,0 +1,2 @@
+# Keep packaged migration bytes identical to the installed development build on all hosts.
+adapters-sqlite/src/main/resources/db/migration/*.sql text eol=lf
