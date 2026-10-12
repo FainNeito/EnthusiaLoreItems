@@ -41,8 +41,8 @@ Existing real-runtime shulker discovery passed 20 windows, 600 continuation pass
 The disposable runtime was stopped. Bloom TEST and production were not changed.
 
 Paper's supported getHolder(false) / getState(false) overloads disable block-entity
-snapshots: https://jd.papermc.io/paper/1.21.11/org/bukkit/inventory/Inventory.html#getHolder(boolean)
-and https://jd.papermc.io/paper/1.21.11/org/bukkit/block/Block.html#getState(boolean).
+snapshots: [Inventory holder API](https://jd.papermc.io/paper/1.21.11/org/bukkit/inventory/Inventory.html#getHolder(boolean))
+and [Block state API](https://jd.papermc.io/paper/1.21.11/org/bukkit/block/Block.html#getState(boolean)).
 
 ## TEST deployment boundary
 
