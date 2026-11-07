@@ -1,6 +1,6 @@
 # Crown branch rollback to a pre-Crown LoreItems binary
 
-Status: procedure plus local evidence; not rehearsed on Paper or TEST. Applies to downgrading from the Crown custody branch, which registers schema migrations V12–V18, to upstream `main` at `86999c0` (schema V11) or earlier. The KOTH side is covered separately in the KOTH repository's `docs/crown-rollback.md`.
+Status: procedure plus local evidence, including one isolated Paper 26.2 downgrade and re-upgrade rehearsal; not rehearsed on TEST. Applies to downgrading from the Crown custody branch, which registers schema migrations V12–V18, to upstream `main` at `86999c0` (schema V11) or earlier. The KOTH side is covered separately in the KOTH repository's `docs/crown-rollback.md`.
 
 ## What a pre-Crown binary does with a Crown database
 
@@ -9,9 +9,11 @@ Observed by running `main`'s own `SQLiteStorageRuntime` and `MigrationRunner` ag
 - Startup refuses the database with `Database schema version 18 is newer than supported version 11`, and storage enters `DEGRADED_READ_ONLY`.
 - Every storage operation is then rejected with `SQLite storage is not writable`. This affects all of LoreItems, not only the Crown: no definition, delivery, tracking or distribution writes succeed while the old binary runs.
 - The database file is byte-for-byte unchanged (SHA-256 compared before and after). Reinstalling the Crown branch reopens it normally.
-- Not observed: whether gameplay protections stay active in degraded mode, or what a pre-Crown binary does with the Crown escrow markers in player saves (`enthusialoreitems:crown_exchange`, `crown_reclaimed`, `crown_released`, `crown_incoming`). It does not read them.
+- On Paper (26.2-129, local loopback rehearsal, 2026-11-07), `main` fails even earlier with the branch config: `Unknown config key: crown-first-award-enabled`, and "writes remain unavailable". Only after the five `crown-*` keys were removed did it reach the schema check above and log "entered degraded read-only mode".
+- A player joining under `main` kept the equipped Crown with its full identity and an intact `crown_exchange` escrow, and the database stayed byte-identical. After the config and branch JAR were restored, storage came back active and custody was unchanged (same operation, generation and EQUIPPED state), with no review hold and one instance.
+- Not observed: whether gameplay protections stay active in degraded mode, or what `main` does if the Crown is moved, dropped or traded while it runs. It cannot record any such movement.
 
-So a plain binary swap cannot lose custody data, but it disables LoreItems persistence until the branch is reinstalled. It is a stop-the-feature rollback, not a working downgrade.
+So a plain binary swap cannot lose custody data, but it disables LoreItems persistence until the branch is reinstalled. It is a stop-the-feature rollback, not a working downgrade. Keep the branch config (or a backup of it), because the branch needs the `crown-*` keys back on re-upgrade.
 
 ## Before any downgrade
 
@@ -35,4 +37,5 @@ So a plain binary swap cannot lose custody data, but it disables LoreItems persi
 ## Evidence and gaps
 
 - Covered: the main-reader probe above; branch migration tests (`MigrationRunnerTest`, `MigrationUpgradeMatrixTest`); and the custody and reclamation integration tests.
-- Not covered: a Paper downgrade and re-upgrade rehearsal with a held or equipped Crown; protection behaviour in degraded mode; how player-save escrow markers behave under an old binary; TEST.
+- Covered on Paper: the downgrade and re-upgrade with an equipped Crown described above.
+- Not covered: a downgrade while a reclamation is held or a delivery is in flight; protection behaviour in degraded mode; Crown movement while the old binary runs; TEST.
