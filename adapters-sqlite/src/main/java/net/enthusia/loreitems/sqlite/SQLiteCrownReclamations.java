@@ -71,37 +71,55 @@ final class SQLiteCrownReclamations {
         }
     }
 
+    /** Claims the winner's pending recovery grant for {@code next}; commits only once the held payload is read. */
     static Optional<Delivery> takeRecoveryDelivery(Connection connection, UUID winner, UUID next) throws SQLException {
+        var operation = pendingRecoveryOperation(connection, winner);
+        if (operation.isEmpty()) return Optional.empty();
+        var held = heldReclamationFor(connection, operation.get());
+        if (held.isEmpty() || !claimRecipient(connection, operation.get(), next)) return Optional.empty();
+        var payload = heldPayload(connection, operation.get());
+        if (payload.isEmpty()) return Optional.empty();
+        var source=held.get().source();
+        var destination=new ExclusiveCustodyReservation(next,source.reservation().instanceId(),winner,
+                Math.incrementExact(source.reservation().generation()),ExclusiveCustodyReservation.State.RESERVED);
+        var delivery=new Delivery(destination,source.definition(),payload.get());
+        connection.commit(); return Optional.of(delivery);
+    }
+
+    private static Optional<String> pendingRecoveryOperation(Connection connection, UUID winner) throws SQLException {
         try(var query=connection.prepareStatement("""
                 SELECT d.recovery_operation FROM crown_recovery_delivery d JOIN crown_custody c
                 ON c.operation_id=d.source_operation AND c.instance_id=d.instance_id AND c.holder_id=d.holder_id AND c.generation=d.generation
                 WHERE d.winner_id=? AND d.recipient_operation IS NULL AND c.state='EQUIPPED'""")) {
             query.setString(1,winner.toString());
-            String operation;
-            try(var row=query.executeQuery()){if(!row.next())return Optional.empty();operation=row.getString(1);}
-            try(var payload=connection.prepareStatement("""
-                    SELECT d.holder_id FROM crown_recovery_delivery d WHERE d.recovery_operation=?""")) {
-                payload.setString(1,operation);
-                try(var row=payload.executeQuery()) {
-                    if(!row.next())return Optional.empty();
-                    var held=read(connection,UUID.fromString(row.getString(1)));
-                    if(held.isEmpty() || !held.get().held() || !held.get().operation().toString().equals(operation))return Optional.empty();
-                    try(var update=connection.prepareStatement("UPDATE crown_recovery_delivery SET recipient_operation=? WHERE recovery_operation=? AND recipient_operation IS NULL")) {
-                        update.setString(1,next.toString());update.setString(2,operation);if(update.executeUpdate()!=1)return Optional.empty();
-                    }
-                    try(var bytes=connection.prepareStatement("SELECT payload FROM crown_reclamation_escrow WHERE recovery_operation=? AND state='HELD'")) {
-                        bytes.setString(1,operation);
-                        try(var value=bytes.executeQuery()) {
-                            if(!value.next())return Optional.empty();
-                            var source=held.get().source();
-                            var destination=new ExclusiveCustodyReservation(next,source.reservation().instanceId(),winner,
-                                    Math.incrementExact(source.reservation().generation()),ExclusiveCustodyReservation.State.RESERVED);
-                            var delivery=new Delivery(destination,source.definition(),value.getBytes(1));
-                            connection.commit(); return Optional.of(delivery);
-                        }
-                    }
-                }
+            try(var row=query.executeQuery()){return row.next() ? Optional.of(row.getString(1)) : Optional.empty();}
+        }
+    }
+
+    /** The former holder's reclamation is held under exactly this recovery operation. */
+    private static Optional<Reclamation> heldReclamationFor(Connection connection, String operation) throws SQLException {
+        try(var payload=connection.prepareStatement("""
+                SELECT d.holder_id FROM crown_recovery_delivery d WHERE d.recovery_operation=?""")) {
+            payload.setString(1,operation);
+            try(var row=payload.executeQuery()) {
+                if(!row.next())return Optional.empty();
+                var held=read(connection,UUID.fromString(row.getString(1)));
+                if(held.isEmpty() || !held.get().held() || !held.get().operation().toString().equals(operation))return Optional.empty();
+                return held;
             }
+        }
+    }
+
+    private static boolean claimRecipient(Connection connection, String operation, UUID next) throws SQLException {
+        try(var update=connection.prepareStatement("UPDATE crown_recovery_delivery SET recipient_operation=? WHERE recovery_operation=? AND recipient_operation IS NULL")) {
+            update.setString(1,next.toString());update.setString(2,operation);return update.executeUpdate()==1;
+        }
+    }
+
+    private static Optional<byte[]> heldPayload(Connection connection, String operation) throws SQLException {
+        try(var bytes=connection.prepareStatement("SELECT payload FROM crown_reclamation_escrow WHERE recovery_operation=? AND state='HELD'")) {
+            bytes.setString(1,operation);
+            try(var value=bytes.executeQuery()) {return value.next() ? Optional.of(value.getBytes(1)) : Optional.empty();}
         }
     }
 
