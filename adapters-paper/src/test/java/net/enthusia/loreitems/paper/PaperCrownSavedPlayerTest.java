@@ -40,7 +40,8 @@ class PaperCrownSavedPlayerTest {
         assertThrows(java.io.IOException.class,()->PaperCrownSavedPlayer.read(save));
     }
     @Test void fallbackContainingCrownOrStaleMarkersCannotReleaseCustody() {
-        UUID instance=UUID.randomUUID(),definition=UUID.randomUUID();
+        UUID instance=UUID.randomUUID();
+        UUID definition=UUID.randomUUID();
         var saved=CompoundBinaryTag.builder().putIntArray("UUID",new int[]{1,2,3,4})
                 .put("Inventory",ListBinaryTag.empty()).put("BukkitValues",CompoundBinaryTag.builder()
                         .putString("enthusialoreitems:crown_reclaimed","operation").build()).build();
