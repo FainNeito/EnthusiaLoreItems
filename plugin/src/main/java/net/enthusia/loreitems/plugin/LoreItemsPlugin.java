@@ -104,7 +104,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
     private volatile DistributionRuntime distributionRuntime;
     private volatile boolean shutdownCleanupComplete = true;
     private volatile boolean stopping;
-    private net.enthusia.loreitems.paper.PaperCrownOfflineReclaimer offlineCrown;
+    private CrownRecoveryActivation crown;
 
     @Override
     public void onEnable() {
@@ -114,19 +114,13 @@ public final class LoreItemsPlugin extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        offlineCrown = null;
-        if (getConfig().getBoolean("crown-reclamation-offline-enabled",false)) {
-            offlineCrown = new net.enthusia.loreitems.paper.PaperCrownOfflineReclaimer(this, () -> !stopping);
-        }
+        crown = new CrownRecoveryActivation(this, () -> !stopping);
         registerCommands();
         if (!activateProtectionListeners()) {
             return;
         }
         getServer().getServicesManager().register(
-                LoreItemsServiceV1.class,
-                registeredService,
-                this,
-                ServicePriority.Normal);
+                LoreItemsServiceV1.class, registeredService, this, ServicePriority.Normal);
         Path dataDirectory = getDataFolder().toPath();
         try {
             lifecycleExecutor.execute(() -> initialize(dataDirectory));
@@ -260,7 +254,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
             shutdownCleanupComplete = false;
             setUnavailableDelegates("The plugin is stopping.");
         }
-        closeQuietly(offlineCrown, "offline Crown recovery");
+        closeQuietly(crown, "offline Crown recovery");
         CompletionStage<Void> trackingQuiescence = PaperTrackingCoordinator.quiescenceFor(this);
         shutdownTrackingQuiescence = trackingQuiescence;
         closeQuietly(uniqueAccessTrackingListener, "unique-access tracking listener");
@@ -436,83 +430,11 @@ public final class LoreItemsPlugin extends JavaPlugin {
                 () -> activateDistributionRuntime(runtime, loaded))) {
             return;
         }
-        activateCrownRecovery(runtime);
+        crown.activate(runtime, () -> !stopping && storageRuntime == runtime);
         getLogger().info(
-                "Durable storage is active; definition creation, adoption, protection, "
-                        + "physical tracking, display observations, terminal void loss, and "
-                        + "mass distributions are available. Delivery, recovery, anomaly, "
-                        + "tracking, and administration components are activating on the "
-                        + "server thread.");
-    }
-
-    private void activateCrownRecovery(SQLiteStorageRuntime runtime) {
-        var store = new net.enthusia.loreitems.sqlite.SQLiteCrownHelmetEvidenceStore(runtime);
-        try {
-            if (store.holdInterruptedOnStartup().toCompletableFuture().join()) {
-                getLogger().warning("Interrupted Crown custody is held for review.");
-            }
-            var recovery = new net.enthusia.loreitems.paper.PaperCrownJoinRecovery(this, store,
-                    () -> !stopping && storageRuntime == runtime);
-            getServer().getScheduler().runTask(this, () -> {
-                recovery.register();
-                if (offlineCrown != null) offlineCrown.start(store);
-                net.enthusia.loreitems.api.v1.CrownReclamationV1 reclamation = (operation, instance, holder, generation) -> {
-                    if (stopping || storageRuntime != runtime) return java.util.concurrent.CompletableFuture.completedFuture(
-                            net.enthusia.loreitems.api.v1.CrownReclamationV1.Result.UNAVAILABLE);
-                    return store.reserveReclamation(operation, instance, holder, generation).thenApply(result -> {
-                        if (result == net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.RESERVED
-                                || result == net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.ALREADY_RESERVED)
-                            getServer().getScheduler().runTask(this, () -> {
-                                if (offlineCrown != null && getServer().getPlayer(holder) == null) offlineCrown.reclaim(holder);
-                                else recovery.reclaim(holder);
-                            });
-                        return net.enthusia.loreitems.api.v1.CrownReclamationV1.Result.valueOf(result.name());
-                    });
-                };
-                getServer().getServicesManager().register(net.enthusia.loreitems.api.v1.CrownReclamationV1.class,
-                        reclamation, this, org.bukkit.plugin.ServicePriority.Normal);
-                final boolean recoveryEventsEnabled=getConfig().getBoolean("crown-recovery-events-enabled",false);
-                var events = new net.enthusia.loreitems.api.v1.CrownRecoveryEventsV1() {
-                    public java.util.concurrent.CompletionStage<java.util.Optional<Status>> current() {
-                        if(stopping || storageRuntime!=runtime) return java.util.concurrent.CompletableFuture.completedFuture(java.util.Optional.empty());
-                        return store.inspectCustody().thenApply(snapshot -> snapshot.filter(s -> s.state().equals("EQUIPPED"))
-                                .map(s -> new Status(s.instance(),s.recordedHolder(),s.generation(),s.reclamationOperation().orElse(null),
-                                        s.reclamationState().equals("HELD"),s.transfer().isPresent(),recoveryEventsEnabled)));
-                    }
-                    public java.util.concurrent.CompletionStage<Result> deliver(java.util.UUID operation,java.util.UUID instance,
-                            java.util.UUID holder,long generation,java.util.UUID match,java.util.UUID winner) {
-                        if(stopping || storageRuntime!=runtime || !recoveryEventsEnabled)
-                            return java.util.concurrent.CompletableFuture.completedFuture(Result.UNAVAILABLE);
-                        return store.reserveRecoveryWinner(operation,instance,holder,generation,match,winner).thenApply(result -> {
-                            if(result==net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.RESERVED ||
-                                    result==net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.ALREADY_RESERVED) recovery.deliver(winner);
-                            return Result.valueOf(result.name());
-                        });
-                    }
-                };
-                getServer().getServicesManager().register(net.enthusia.loreitems.api.v1.CrownRecoveryEventsV1.class,
-                        events,this,org.bukkit.plugin.ServicePriority.Normal);
-                var command = getCommand("loreitems");
-                if (command != null && command.getExecutor() instanceof LoreItemsCommandExecutor executor) {
-                    executor.setCrownInspection(new net.enthusia.loreitems.paper.PaperCrownInspectionCommand(
-                            this, store, () -> !stopping && storageRuntime == runtime));
-                }
-                if (stopping || storageRuntime != runtime || !getConfig().getBoolean("crown-first-award-enabled")) return;
-                try {
-                    var provider = new net.enthusia.loreitems.paper.PaperCrownFirstAward(this,
-                            new net.enthusia.loreitems.sqlite.SQLiteDefinitionRepository(runtime), store,
-                            () -> !stopping && storageRuntime == runtime,
-                            java.util.UUID.fromString(getConfig().getString("crown-first-award-definition-id", "")),
-                            getConfig().getLong("crown-first-award-revision"));
-                    getServer().getServicesManager().register(net.enthusia.loreitems.api.v1.CrownFirstAwardV1.class,
-                            provider, this, org.bukkit.plugin.ServicePriority.Normal);
-                } catch (IllegalArgumentException invalid) {
-                    getLogger().warning("First Crown award requires a valid definition UUID and positive revision.");
-                }
-            });
-        } catch (RuntimeException failure) {
-            getLogger().log(java.util.logging.Level.SEVERE, "Crown recovery unavailable; escrow retained.", failure);
-        }
+                "Durable storage is active; definition creation, adoption, protection, physical tracking, "
+                        + "display observations, terminal void loss, and mass distributions are available. Delivery, "
+                        + "recovery, anomaly, tracking, and administration components are activating on the server thread.");
     }
     private boolean activateTrackingListeners(
             TrackingObservationUseCase useCase,

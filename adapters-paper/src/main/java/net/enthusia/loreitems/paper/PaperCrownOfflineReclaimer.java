@@ -69,58 +69,60 @@ public final class PaperCrownOfflineReclaimer implements Listener, AutoCloseable
             // A recipient grant owns the next step, including when the former holder wins again.
             // Blocking that login would prevent incoming-save recovery after a crash.
             if(snapshot.filter(value -> value.transfer().isPresent()).isPresent()) return CompletableFuture.completedFuture(true);
-            return recovery.findReclamation(holder).thenCompose(found -> {
-            if(found.isEmpty()) return CompletableFuture.completedFuture(false);
-            var request=found.get();
-            return CompletableFuture.supplyAsync(() -> {
-                try { return PaperCrownOfflineSave.prepare(directory,request); }
-                catch(Exception error) { throw new CompletionException(error); }
-            },worker).thenCompose(prepared -> stage(prepared).thenCompose(staged -> {
-                if(!staged) return CompletableFuture.completedFuture(false);
-                return CompletableFuture.supplyAsync(() -> {
-                    synchronized(writeLock) {
-                        if(closed || !active.getAsBoolean()) return false;
-                        try {
-                            PaperCrownOfflineSave.apply(prepared,plugin.getDataFolder().toPath()
-                                    .resolve("crown-save-evidence").resolve(request.operation().toString()));
-                            return true;
-                        } catch(Exception error) { throw new CompletionException(error); }
-                    }
-                },worker).thenCompose(saved -> saved ? recovery.confirmReclamation(request)
-                        : CompletableFuture.completedFuture(false));
-            }));
-            });
-        }).whenComplete((complete,error) -> onMain(() -> {
-            running.remove(holder);
-            if(error==null && Boolean.TRUE.equals(complete)) {
-                blocked.remove(holder);
-                plugin.getLogger().info("Offline Crown removal confirmed for " + holder);
-            } else report(error==null ? new IllegalStateException("Offline Crown removal requires review for " + holder) : error);
-        }));
+            return recovery.findReclamation(holder).thenCompose(found -> found.isEmpty()
+                    ? CompletableFuture.completedFuture(false) : removeOffline(directory, found.get()));
+        }).whenComplete((complete,error) -> onMain(() -> finishReclaim(holder, complete, error)));
+    }
+    private CompletionStage<Boolean> removeOffline(Path directory, CrownEquipmentRecovery.Reclamation request) {
+        return CompletableFuture.supplyAsync(() -> {
+            try { return PaperCrownOfflineSave.prepare(directory,request); }
+            catch(Exception error) { throw new CompletionException(error); }
+        },worker).thenCompose(prepared -> stage(prepared).thenCompose(staged -> staged
+                ? applyAndConfirm(prepared, request) : CompletableFuture.completedFuture(false)));
+    }
+    private CompletionStage<Boolean> applyAndConfirm(PaperCrownOfflineSave.Prepared prepared, CrownEquipmentRecovery.Reclamation request) {
+        return CompletableFuture.supplyAsync(() -> applySave(prepared, request),worker)
+                .thenCompose(saved -> saved ? recovery.confirmReclamation(request) : CompletableFuture.completedFuture(false));
+    }
+    private boolean applySave(PaperCrownOfflineSave.Prepared prepared, CrownEquipmentRecovery.Reclamation request) {
+        synchronized(writeLock) {
+            if(closed || !active.getAsBoolean()) return false;
+            try {
+                PaperCrownOfflineSave.apply(prepared,plugin.getDataFolder().toPath()
+                        .resolve("crown-save-evidence").resolve(request.operation().toString()));
+                return true;
+            } catch(Exception error) { throw new CompletionException(error); }
+        }
+    }
+    private void finishReclaim(UUID holder, Boolean complete, Throwable error) {
+        running.remove(holder);
+        if(error==null && Boolean.TRUE.equals(complete)) {
+            blocked.remove(holder);
+            plugin.getLogger().info("Offline Crown removal confirmed for " + holder);
+        } else report(error==null ? new IllegalStateException("Offline Crown removal requires review for " + holder) : error);
     }
     private CompletionStage<Boolean> stage(PaperCrownOfflineSave.Prepared prepared) {
         if(prepared.crown()==null) return CompletableFuture.completedFuture(true);
         var result=new CompletableFuture<Boolean>();
-        onMain(() -> {
-            if(closed || !active.getAsBoolean() || plugin.getServer().getPlayer(prepared.request().source().reservation().holderId())!=null) {
+        onMain(() -> stageOnMain(prepared, result));
+        return result;
+    }
+    private void stageOnMain(PaperCrownOfflineSave.Prepared prepared, CompletableFuture<Boolean> result) {
+        if(closed || !active.getAsBoolean() || plugin.getServer().getPlayer(prepared.request().source().reservation().holderId())!=null) {
+            result.complete(false); return;
+        }
+        try {
+            var item=org.bukkit.inventory.ItemStack.deserializeBytes(prepared.crown());
+            var identity=new PaperItemIdentityCodec(PaperItemCodecThreadGuard.system()).readIdentity(item);
+            var source=prepared.request().source();
+            if(!PaperCrownSlotExchange.singleNetheriteHelmet(item)
+                    || !PaperCrownSlotExchange.tracksRequest(identity, source.reservation(), source.definition())) {
                 result.complete(false); return;
             }
-            try {
-                var item=org.bukkit.inventory.ItemStack.deserializeBytes(prepared.crown());
-                var identity=new PaperItemIdentityCodec(PaperItemCodecThreadGuard.system()).readIdentity(item);
-                var source=prepared.request().source();
-                if(item.getType()!=org.bukkit.Material.NETHERITE_HELMET || item.getAmount()!=1
-                        || !(identity instanceof net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked tracked)
-                        || !tracked.identity().instanceId().value().equals(source.reservation().instanceId())
-                        || !tracked.identity().definitionId().value().equals(source.definition())) {
-                    result.complete(false); return;
-                }
-                recovery.stageReclamation(prepared.request(),item.serializeAsBytes()).whenComplete((staged,error) -> {
-                    if(error!=null) result.completeExceptionally(error); else result.complete(staged);
-                });
-            } catch(Exception error) { result.completeExceptionally(error); }
-        });
-        return result;
+            recovery.stageReclamation(prepared.request(),item.serializeAsBytes()).whenComplete((staged,error) -> {
+                if(error!=null) result.completeExceptionally(error); else result.complete(staged);
+            });
+        } catch(Exception error) { result.completeExceptionally(error); }
     }
     private void onMain(Runnable task) {
         if(!closed && active.getAsBoolean()) plugin.getServer().getScheduler().runTask(plugin,task);

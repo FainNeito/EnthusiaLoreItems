@@ -40,37 +40,53 @@ final class PaperCrownSavedPlayer {
             Path root = player.getServer().getWorlds().getFirst().getWorldFolder().toPath();
             Path file = playerDirectory(root, version).resolve(player.getUniqueId() + ".dat");
             var saved = read(file);
-            var owner = player.getUniqueId();
-            var expected = new int[]{(int)(owner.getMostSignificantBits() >>> 32), (int)owner.getMostSignificantBits(),
-                    (int)(owner.getLeastSignificantBits() >>> 32), (int)owner.getLeastSignificantBits()};
-            if (!Arrays.equals(expected,saved.getIntArray("UUID")) || !saved.contains("Inventory")) return false;
+            if (!ownedBy(player.getUniqueId(), saved)) return false;
             var persisted = saved.getCompound("BukkitValues");
             var live = player.getPersistentDataContainer();
             var escrow = live.get(ESCROW,PersistentDataType.TAG_CONTAINER);
             if (escrow == null) return false;
-            var stored = persisted.getCompound(PREFIX+"crown_exchange");
-            for (String name : java.util.List.of("operation","holder","instance")) {
-                String value = escrow.get(new NamespacedKey("enthusialoreitems",name),PersistentDataType.STRING);
-                if (value == null || !value.equals(stored.getString(PREFIX+name))) return false;
-            }
-            if (!java.util.Objects.equals(escrow.get(new NamespacedKey("enthusialoreitems","generation"),PersistentDataType.LONG),
-                    stored.getLong(PREFIX+"generation",-1))) return false;
-            for (String name : java.util.List.of("crown_released","crown_incoming","crown_reclaimed")) {
-                String value = live.get(new NamespacedKey("enthusialoreitems",name),PersistentDataType.STRING);
-                if (value == null ? persisted.contains(PREFIX+name) : !value.equals(persisted.getString(PREFIX+name))) return false;
-            }
-            byte[] original = escrow.get(new NamespacedKey("enthusialoreitems","original"),PersistentDataType.BYTE_ARRAY);
-            if (original == null ? stored.contains(PREFIX+"original") : !Arrays.equals(original,stored.getByteArray(PREFIX+"original"))) return false;
-            String consumed = escrow.get(new NamespacedKey("enthusialoreitems","consumed"),PersistentDataType.STRING);
-            if (consumed == null ? stored.contains(PREFIX+"consumed") : !consumed.equals(stored.getString(PREFIX+"consumed"))) return false;
-            if (count(saved,instance,definition,0) != (equipped ? 1 : 0)) return false;
-            var head = saved.getCompound("equipment").getCompound("head");
-            return !equipped || head.getString("id").equals("minecraft:netherite_helmet")
-                    && head.getInt("count")==1 && count(head,instance,definition,0)==1;
+            // Placement is checked last: its identity count throws on conflicting identities.
+            return escrowSaved(escrow, persisted.getCompound(PREFIX+"crown_exchange")) && markersSaved(live, persisted)
+                    && placementSaved(saved, instance, definition, equipped);
         } catch (java.io.IOException | RuntimeException uncertain) {
             player.getServer().getLogger().warning("Crown saved inventory readback held: " + uncertain.getMessage());
             return false;
         }
+    }
+
+    private static boolean ownedBy(UUID owner, CompoundBinaryTag saved) {
+        var expected = new int[]{(int)(owner.getMostSignificantBits() >>> 32), (int)owner.getMostSignificantBits(),
+                (int)(owner.getLeastSignificantBits() >>> 32), (int)owner.getLeastSignificantBits()};
+        return Arrays.equals(expected,saved.getIntArray("UUID")) && saved.contains("Inventory");
+    }
+
+    /** Every live escrow field, including an absent original or consumed digest, matches the saved escrow. */
+    private static boolean escrowSaved(org.bukkit.persistence.PersistentDataContainer escrow, CompoundBinaryTag stored) {
+        for (String name : java.util.List.of("operation","holder","instance")) {
+            String value = escrow.get(new NamespacedKey("enthusialoreitems",name),PersistentDataType.STRING);
+            if (value == null || !value.equals(stored.getString(PREFIX+name))) return false;
+        }
+        if (!java.util.Objects.equals(escrow.get(new NamespacedKey("enthusialoreitems","generation"),PersistentDataType.LONG),
+                stored.getLong(PREFIX+"generation",-1))) return false;
+        byte[] original = escrow.get(new NamespacedKey("enthusialoreitems","original"),PersistentDataType.BYTE_ARRAY);
+        if (original == null ? stored.contains(PREFIX+"original") : !Arrays.equals(original,stored.getByteArray(PREFIX+"original"))) return false;
+        String consumed = escrow.get(new NamespacedKey("enthusialoreitems","consumed"),PersistentDataType.STRING);
+        return consumed == null ? !stored.contains(PREFIX+"consumed") : consumed.equals(stored.getString(PREFIX+"consumed"));
+    }
+
+    private static boolean markersSaved(org.bukkit.persistence.PersistentDataContainer live, CompoundBinaryTag persisted) {
+        for (String name : java.util.List.of("crown_released","crown_incoming","crown_reclaimed")) {
+            String value = live.get(new NamespacedKey("enthusialoreitems",name),PersistentDataType.STRING);
+            if (value == null ? persisted.contains(PREFIX+name) : !value.equals(persisted.getString(PREFIX+name))) return false;
+        }
+        return true;
+    }
+
+    private static boolean placementSaved(CompoundBinaryTag saved, UUID instance, UUID definition, boolean equipped) {
+        if (count(saved,instance,definition,0) != (equipped ? 1 : 0)) return false;
+        var head = saved.getCompound("equipment").getCompound("head");
+        return !equipped || head.getString("id").equals("minecraft:netherite_helmet")
+                && head.getInt("count")==1 && count(head,instance,definition,0)==1;
     }
 
     static Path playerDirectory(Path worldFolder, String version) {

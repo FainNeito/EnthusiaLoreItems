@@ -122,11 +122,7 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
             return true;
         }
         String subcommand = arguments[0].toLowerCase(Locale.ROOT);
-        if (subcommand.equals("crown")) {
-            if (crownInspection != null) return crownInspection.onCommand(sender, command, label, arguments);
-            sender.sendMessage("Crown custody inspection is unavailable.");
-            return true;
-        }
+        if (subcommand.equals("crown")) return executeCrown(sender, command, label, arguments);
         return switch (subcommand) {
             case CREATE_SUBCOMMAND -> createExecutor.onCommand(sender, command, label, arguments);
             case ADOPT_SUBCOMMAND -> adoptExecutor.onCommand(sender, command, label, arguments);
@@ -138,6 +134,12 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
                     executeAdministration(sender, command, label, arguments);
             default -> executeDestructiveOrUsage(sender, command, label, arguments, subcommand);
         };
+    }
+
+    private boolean executeCrown(CommandSender sender, Command command, String label, String[] arguments) {
+        if (crownInspection != null) return crownInspection.onCommand(sender, command, label, arguments);
+        sender.sendMessage("Crown custody inspection is unavailable.");
+        return true;
     }
 
     @Override

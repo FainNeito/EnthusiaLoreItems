@@ -43,6 +43,15 @@ final class SQLiteCrownIdentityAudit {
 
     static Set<Finding> inspect(Connection c, String definition, String instance) throws SQLException {
         EnumSet<Finding> findings = EnumSet.of(Finding.LIVE_PHYSICAL_PROOF_REQUIRED);
+        inspectIdentity(c, definition, instance, findings);
+        inspectOpenWork(c, definition, instance, findings);
+        if (!exists(c, "SELECT 1 FROM instance_current_state WHERE instance_id=? AND state='CONFIRMED_NOW'", instance)) {
+            findings.add(Finding.LOCATION_UNCERTAIN);
+        }
+        return Collections.unmodifiableSet(findings);
+    }
+
+    private static void inspectIdentity(Connection c, String definition, String instance, Set<Finding> findings) throws SQLException {
         if (!exists(c, "SELECT 1 FROM lore_definitions WHERE definition_id=? AND deleted_at IS NULL", definition)) {
             findings.add(Finding.DEFINITION_UNAVAILABLE);
         }
@@ -59,6 +68,10 @@ final class SQLiteCrownIdentityAudit {
         if (exists(c, "SELECT 1 FROM instance_anomalies WHERE definition_id=? AND status IN ('OPEN','ACKNOWLEDGED') LIMIT 1", definition)) {
             findings.add(Finding.UNRESOLVED_IDENTITY_ANOMALY);
         }
+    }
+
+    /** Deliveries, distributions, mutations and destructive operations that could still move or change the item. */
+    private static void inspectOpenWork(Connection c, String definition, String instance, Set<Finding> findings) throws SQLException {
         if (exists(c, "SELECT 1 FROM direct_deliveries d JOIN lore_instances i ON i.instance_id=d.instance_id "
                 + "WHERE i.definition_id=? AND d.state NOT IN ('COMPLETED','CANCELLED') LIMIT 1", definition)) {
             findings.add(Finding.PENDING_DELIVERY);
@@ -82,10 +95,6 @@ final class SQLiteCrownIdentityAudit {
                 + "OR t.effect_state IN ('UNKNOWN','AMBIGUOUS')))) LIMIT 1", definition)) {
             findings.add(Finding.DESTRUCTIVE_OPERATION);
         }
-        if (!exists(c, "SELECT 1 FROM instance_current_state WHERE instance_id=? AND state='CONFIRMED_NOW'", instance)) {
-            findings.add(Finding.LOCATION_UNCERTAIN);
-        }
-        return Collections.unmodifiableSet(findings);
     }
 
     private static boolean exists(Connection c, String sql, String... values) throws SQLException {

@@ -6,6 +6,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 import net.enthusia.loreitems.application.CrownExchangeAdmission;
+import net.enthusia.loreitems.application.EncodedItemTemplate;
 import org.bukkit.plugin.Plugin;
 import java.util.UUID;
 import net.enthusia.loreitems.application.ItemIdentityReadResult;
@@ -26,18 +27,27 @@ final class PaperCrownSlotExchange {
         this.guard = guard;
     }
 
+    /** Collaborators for one staging attempt. */
+    record Staging(CrownExchangeAdmission admission, PaperCrownPreparationFence fence, Plugin plugin, Executor primaryThread) {}
+
+    /** The Crown to move: an existing storage slot, or a first issue minted from {@code template} (slot -1). */
+    private record Source(int slot, ItemStack item, EncodedItemTemplate template, long revision) {
+        boolean firstIssue() {
+            return template != null;
+        }
+    }
+
     CompletionStage<Result> stage(Player player, ExclusiveCustodyReservation request, UUID definition, int sourceSlot,
             CrownExchangeAdmission admission, PaperCrownPreparationFence fence, Plugin plugin, Executor primaryThread) {
         guard.requirePrimaryThread();
         if (player == null || sourceSlot < 0 || sourceSlot >= player.getInventory().getStorageContents().length)
-            return CompletableFuture.completedFuture(Result.HELD);
-        return stage(player, request, definition, sourceSlot, player.getInventory().getItem(sourceSlot),
-                null, 0, admission, fence, plugin, primaryThread);
+            return held();
+        return new Attempt(player, request, definition, new Source(sourceSlot, player.getInventory().getItem(sourceSlot), null, 0),
+                new Staging(admission, fence, plugin, primaryThread)).run();
     }
 
     CompletionStage<Result> stageFirst(Player player, ExclusiveCustodyReservation request, UUID definition, long revision,
-            net.enthusia.loreitems.application.EncodedItemTemplate template, CrownExchangeAdmission admission,
-            PaperCrownPreparationFence fence, Plugin plugin, Executor primaryThread) {
+            EncodedItemTemplate template, Staging staging) {
         guard.requirePrimaryThread();
         var identity = new net.enthusia.loreitems.application.LoreItemIdentity(
                 new net.enthusia.loreitems.domain.LoreDefinitionId(definition),
@@ -45,70 +55,118 @@ final class PaperCrownSlotExchange {
                 new net.enthusia.loreitems.domain.TemplateRevision(revision));
         var helmet = new PaperItemTemplateCodec(guard).decode(template);
         var crown = new PaperItemIdentityCodec(guard).writeIdentity(helmet, identity);
-        return stage(player, request, definition, -1, crown, template, revision, admission, fence, plugin, primaryThread);
+        return new Attempt(player, request, definition, new Source(-1, crown, template, revision), staging).run();
     }
 
-    private CompletionStage<Result> stage(Player player, ExclusiveCustodyReservation request, UUID definition,
-            int sourceSlot, ItemStack source, net.enthusia.loreitems.application.EncodedItemTemplate template, long revision,
-            CrownExchangeAdmission admission, PaperCrownPreparationFence fence, Plugin plugin, Executor primaryThread) {
-        var expectedLocation = template == null ? PaperCrownInventoryProbe.Observation.ELSEWHERE : PaperCrownInventoryProbe.Observation.MISSING;
-        var capture = new PaperCrownHelmetEvidence(guard);
-        var before = capture.capture(player, request.holderId());
-        if (before.isEmpty()) {
-            return CompletableFuture.completedFuture(Result.HELD);
+    private static CompletionStage<Result> held() {
+        return CompletableFuture.completedFuture(Result.HELD);
+    }
+
+    /** One staging attempt; its fence token and exchange window live exactly as long as its outcome. */
+    private final class Attempt {
+        private final Player player;
+        private final ExclusiveCustodyReservation request;
+        private final UUID definition;
+        private final Source source;
+        private final Staging staging;
+        private final PaperCrownInventoryProbe.Observation expectedLocation;
+        private final PaperCrownHelmetEvidence capture = new PaperCrownHelmetEvidence(guard);
+        private final CompletableFuture<Result> outcome = new CompletableFuture<>();
+
+        Attempt(Player player, ExclusiveCustodyReservation request, UUID definition, Source source, Staging staging) {
+            this.player = player;
+            this.request = request;
+            this.definition = definition;
+            this.source = source;
+            this.staging = staging;
+            this.expectedLocation = source.firstIssue()
+                    ? PaperCrownInventoryProbe.Observation.MISSING : PaperCrownInventoryProbe.Observation.ELSEWHERE;
         }
 
-        if (source == null || source.getType() != Material.NETHERITE_HELMET || source.getAmount() != 1
-                || player.getPersistentDataContainer().has(ESCROW)) return CompletableFuture.completedFuture(Result.HELD);
-        var identity = new PaperItemIdentityCodec(guard).readIdentity(source);
-        if (!(identity instanceof ItemIdentityReadResult.Tracked tracked)
-                || !tracked.identity().definitionId().value().equals(definition)
-                || !tracked.identity().instanceId().value().equals(request.instanceId())
-                || new PaperCrownInventoryProbe(guard).observe(player, request.holderId(), definition, request.instanceId())
-                != expectedLocation) return CompletableFuture.completedFuture(Result.HELD);
-        var expectedSource = source.clone();
-        var token = fence.begin(request.holderId());
-        if (token == null) return CompletableFuture.completedFuture(Result.HELD);
-        var outcome = new CompletableFuture<Result>();
-        var window = new PaperCrownExchangeWindow(plugin, player, () -> outcome.complete(Result.HELD));
-        outcome.whenComplete((result, error) -> {
-            fence.end(request.holderId(), token);
-            window.close();
-        });
-        var original = before.orElseThrow();
-        try {
-            window.open();
-            var decision = template == null ? admission.admit(request, definition, original.empty(), original.bytes())
-                    : admission.reserveFirstIssue(request, definition, revision, template, original.bytes());
-            // The main-thread callback may be rejected during shutdown. A subsequently
-            // committed reservation still needs review even after the window has closed.
+        CompletionStage<Result> run() {
+            var before = capture.capture(player, request.holderId());
+            if (before.isEmpty() || !admissibleSource()) return held();
+            var expectedSource = source.item().clone();
+            var token = staging.fence().begin(request.holderId());
+            if (token == null) return held();
+            var window = new PaperCrownExchangeWindow(staging.plugin(), player, () -> outcome.complete(Result.HELD));
+            outcome.whenComplete((result, error) -> {
+                staging.fence().end(request.holderId(), token);
+                window.close();
+            });
+            var original = before.orElseThrow();
+            try {
+                window.open();
+                var decision = decide(original);
+                holdIfAbandoned(decision);
+                decision.whenCompleteAsync((admitted, failure) ->
+                        settle(failure == null && Boolean.TRUE.equals(admitted), token, expectedSource, original),
+                        staging.primaryThread());
+            } catch (RuntimeException unavailable) {
+                outcome.complete(Result.HELD);
+            }
+            return outcome.minimalCompletionStage();
+        }
+
+        private boolean admissibleSource() {
+            var item = source.item();
+            if (!singleNetheriteHelmet(item) || player.getPersistentDataContainer().has(ESCROW)) return false;
+            return tracksRequest(new PaperItemIdentityCodec(guard).readIdentity(item), request, definition)
+                    && new PaperCrownInventoryProbe(guard).observe(player, request.holderId(), definition, request.instanceId())
+                    == expectedLocation;
+        }
+
+        private CompletionStage<Boolean> decide(PaperCrownHelmetEvidence.Snapshot original) {
+            return source.firstIssue()
+                    ? staging.admission().reserveFirstIssue(request, definition, source.revision(), source.template(), original.bytes())
+                    : staging.admission().admit(request, definition, original.empty(), original.bytes());
+        }
+
+        /**
+         * The main-thread callback may be rejected during shutdown. A subsequently
+         * committed reservation still needs review even after the window has closed.
+         */
+        private void holdIfAbandoned(CompletionStage<Boolean> decision) {
             decision.thenCombine(outcome, (accepted, result) -> Boolean.TRUE.equals(accepted) && result == Result.HELD)
-                    .thenCompose(hold -> hold ? admission.hold(request) : CompletableFuture.completedFuture(false))
+                    .thenCompose(hold -> hold ? staging.admission().hold(request) : CompletableFuture.completedFuture(false))
                     .exceptionally(error -> {
-                        plugin.getLogger().log(java.util.logging.Level.WARNING, "Could not confirm Crown custody for " + request.operationId(), error);
+                        staging.plugin().getLogger().log(java.util.logging.Level.WARNING,
+                                "Could not confirm Crown custody for " + request.operationId(), error);
                         return false;
                     });
-            decision.whenCompleteAsync((admitted, failure) -> {
-                boolean accepted = Boolean.TRUE.equals(admitted);
-                try {
-                    if (failure == null && accepted && !outcome.isDone() && fence.valid(request.holderId(), token)
-                            && plugin.isEnabled() && plugin.getServer().getPlayer(request.holderId()) == player
-                            && (template != null || expectedSource.equals(player.getInventory().getItem(sourceSlot)))) {
-                        var current = capture.capture(player, request.holderId());
-                        if (current.isPresent() && Arrays.equals(current.orElseThrow().bytes(), original.bytes())
-                                && moveReserved(player, request, definition, sourceSlot, expectedSource, expectedLocation) == Result.STAGED) {
-                            outcome.complete(Result.STAGED);
-                            return;
-                        }
-                    }
-                } finally {
-                    if (!outcome.isDone()) outcome.complete(Result.HELD);
-                }
-            }, primaryThread);
-        } catch (RuntimeException unavailable) {
-            outcome.complete(Result.HELD);
         }
-        return outcome.minimalCompletionStage();
+
+        private void settle(boolean accepted, UUID token, ItemStack expectedSource, PaperCrownHelmetEvidence.Snapshot original) {
+            try {
+                if (accepted && stillCurrent(token, expectedSource) && helmetUnchanged(original)
+                        && moveReserved(player, request, definition, source.slot(), expectedSource, expectedLocation) == Result.STAGED) {
+                    outcome.complete(Result.STAGED);
+                }
+            } finally {
+                if (!outcome.isDone()) outcome.complete(Result.HELD);
+            }
+        }
+
+        private boolean stillCurrent(UUID token, ItemStack expectedSource) {
+            return !outcome.isDone() && staging.fence().valid(request.holderId(), token)
+                    && staging.plugin().isEnabled() && staging.plugin().getServer().getPlayer(request.holderId()) == player
+                    && (source.firstIssue() || expectedSource.equals(player.getInventory().getItem(source.slot())));
+        }
+
+        private boolean helmetUnchanged(PaperCrownHelmetEvidence.Snapshot original) {
+            var current = capture.capture(player, request.holderId());
+            return current.isPresent() && Arrays.equals(current.orElseThrow().bytes(), original.bytes());
+        }
+    }
+
+    static boolean singleNetheriteHelmet(ItemStack item) {
+        return item != null && item.getType() == Material.NETHERITE_HELMET && item.getAmount() == 1;
+    }
+
+    static boolean tracksRequest(ItemIdentityReadResult identity, ExclusiveCustodyReservation request, UUID definition) {
+        return identity instanceof ItemIdentityReadResult.Tracked tracked
+                && tracked.identity().definitionId().value().equals(definition)
+                && tracked.identity().instanceId().value().equals(request.instanceId());
     }
 
     /** Read the holder marker written in the same player save as the physical Crown. */
@@ -201,30 +259,21 @@ final class PaperCrownSlotExchange {
     }
     private Result moveReserved(Player player, ExclusiveCustodyReservation request, UUID definition, int sourceSlot, ItemStack crown, PaperCrownInventoryProbe.Observation expectedLocation) {
         guard.requirePrimaryThread();
-        if (player == null || !player.isOnline() || !player.getUniqueId().equals(request.holderId())
-                || request.state() != ExclusiveCustodyReservation.State.RESERVED) return Result.HELD;
+        if (!reservedForOnlineHolder(player, request)) return Result.HELD;
         try {
             var inventory = player.getInventory();
 
             var data = player.getPersistentDataContainer();
             if (data.has(ESCROW)) return Result.HELD;
 
-            var codec = new PaperItemIdentityCodec(guard);
-            if (crown == null || crown.getType() != Material.NETHERITE_HELMET || crown.getAmount() != 1
-                    || !(codec.readIdentity(crown) instanceof ItemIdentityReadResult.Tracked tracked)
-                    || !tracked.identity().instanceId().value().equals(request.instanceId())
-                    || !tracked.identity().definitionId().value().equals(definition)) return Result.HELD;
+            if (!singleNetheriteHelmet(crown)
+                    || !tracksRequest(new PaperItemIdentityCodec(guard).readIdentity(crown), request, definition)) return Result.HELD;
             var probe = new PaperCrownInventoryProbe(guard);
             if (probe.observe(player, request.holderId(), definition, request.instanceId())
                     != expectedLocation) return Result.HELD;
             var original = new PaperCrownHelmetEvidence(guard).capture(player, request.holderId());
             if (original.isEmpty()) return Result.HELD;
-            var escrow = data.getAdapterContext().newPersistentDataContainer();
-            escrow.set(key("operation"), PersistentDataType.STRING, request.operationId().toString());
-            escrow.set(key("instance"), PersistentDataType.STRING, request.instanceId().toString());
-            escrow.set(key("holder"), PersistentDataType.STRING, request.holderId().toString());
-            escrow.set(key("generation"), PersistentDataType.LONG, request.generation());
-            escrow.set(key("original"), PersistentDataType.BYTE_ARRAY, original.orElseThrow().bytes());
+            var escrow = escrowFor(data, request, original.orElseThrow().bytes());
             // The escrow and both inventory slots belong to the same player's save.
             // An existing escrow always blocks replay, including after a partial mutation.
             var moving = crown.clone();
@@ -236,6 +285,22 @@ final class PaperCrownSlotExchange {
         } catch (RuntimeException uncertain) {
             return Result.HELD;
         }
+    }
+
+    private static boolean reservedForOnlineHolder(Player player, ExclusiveCustodyReservation request) {
+        return player != null && player.isOnline() && player.getUniqueId().equals(request.holderId())
+                && request.state() == ExclusiveCustodyReservation.State.RESERVED;
+    }
+
+    private static org.bukkit.persistence.PersistentDataContainer escrowFor(org.bukkit.persistence.PersistentDataContainer data,
+            ExclusiveCustodyReservation request, byte[] original) {
+        var escrow = data.getAdapterContext().newPersistentDataContainer();
+        escrow.set(key("operation"), PersistentDataType.STRING, request.operationId().toString());
+        escrow.set(key("instance"), PersistentDataType.STRING, request.instanceId().toString());
+        escrow.set(key("holder"), PersistentDataType.STRING, request.holderId().toString());
+        escrow.set(key("generation"), PersistentDataType.LONG, request.generation());
+        escrow.set(key("original"), PersistentDataType.BYTE_ARRAY, original);
+        return escrow;
     }
 
     private static NamespacedKey key(String field) {

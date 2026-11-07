@@ -49,30 +49,41 @@ final class PaperCrownHelmetPreparation {
         var completion = new CompletableFuture<Result>();
         write.whenComplete((result, failure) -> {
             try {
-                scheduleOnMain.accept(() -> {
-                    try {
-                        if (failure != null || result == null || result == CrownHelmetEvidenceStore.Result.HOLD
-                                || !fence.valid(request.holderId(), token)) {
-                            hold(request).whenComplete((ignored, error) -> completion.complete(Result.HELD));
-                            return;
-                        }
-                        var current = capture.capture(findPlayer.apply(request.holderId()), request.holderId());
-                        boolean unchanged = current.isPresent() && current.orElseThrow().empty() == before.empty()
-                                && Arrays.equals(current.orElseThrow().bytes(), before.bytes());
-                        if (unchanged) {
-                            fence.end(request.holderId(), token);
-                            completion.complete(Result.EVIDENCE_RECORDED_FOR_REVIEW);
-                        }
-                        else hold(request).whenComplete((ignored, error) -> completion.complete(Result.HELD));
-                    } catch (RuntimeException unavailable) {
-                        hold(request).whenComplete((ignored, error) -> completion.complete(Result.HELD));
-                    }
-                });
+                scheduleOnMain.accept(() -> settle(request, token, before,
+                        failure == null ? result : null, completion));
             } catch (RuntimeException rejected) {
-                hold(request).whenComplete((ignored, error) -> completion.complete(Result.HELD));
+                holdThenComplete(request, completion);
             }
         });
         return completion;
+    }
+
+    /** Runs on the main thread. A failed or missing write arrives as a null {@code result}. */
+    private void settle(ExclusiveCustodyReservation request, UUID token, PaperCrownHelmetEvidence.Snapshot before,
+            CrownHelmetEvidenceStore.Result result, CompletableFuture<Result> completion) {
+        try {
+            if (result == null || result == CrownHelmetEvidenceStore.Result.HOLD || !fence.valid(request.holderId(), token)) {
+                holdThenComplete(request, completion);
+                return;
+            }
+            if (unchanged(request, before)) {
+                fence.end(request.holderId(), token);
+                completion.complete(Result.EVIDENCE_RECORDED_FOR_REVIEW);
+            }
+            else holdThenComplete(request, completion);
+        } catch (RuntimeException unavailable) {
+            holdThenComplete(request, completion);
+        }
+    }
+
+    private boolean unchanged(ExclusiveCustodyReservation request, PaperCrownHelmetEvidence.Snapshot before) {
+        var current = capture.capture(findPlayer.apply(request.holderId()), request.holderId());
+        return current.isPresent() && current.orElseThrow().empty() == before.empty()
+                && Arrays.equals(current.orElseThrow().bytes(), before.bytes());
+    }
+
+    private void holdThenComplete(ExclusiveCustodyReservation request, CompletableFuture<Result> completion) {
+        hold(request).whenComplete((ignored, error) -> completion.complete(Result.HELD));
     }
 
     /** A HELD result is never evidence that a durable provider hold succeeded. */
