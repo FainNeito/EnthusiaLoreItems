@@ -29,6 +29,11 @@ final class LoreItemsServiceDelegates {
         }
 
         @Override
+        public CompletionStage<Boolean> isDefinitionActive(String definitionKey) {
+            return delegate.get().isDefinitionActive(definitionKey);
+        }
+
+        @Override
         public CompletionStage<LoreDeliveryResult> queueDelivery(
                 String definitionKey,
                 UUID playerId,

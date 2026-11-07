@@ -22,7 +22,10 @@ class LoreItemsServiceV1AbiTest {
         assertEquals(CompletionStage.class, queueDelivery.getReturnType());
         assertTrue(Modifier.isPublic(queueDelivery.getModifiers()));
         assertTrue(Modifier.isAbstract(queueDelivery.getModifiers()));
-        assertEquals(1, LoreItemsServiceV1.class.getMethods().length);
+        Method lookup = LoreItemsServiceV1.class.getMethod("isDefinitionActive", String.class);
+        assertTrue(lookup.isDefault());
+        assertEquals(CompletionStage.class, lookup.getReturnType());
+        assertEquals(2, LoreItemsServiceV1.class.getMethods().length);
     }
 
     @Test

@@ -14,6 +14,11 @@ dependencies {
 }
 
 tasks {
+    jar {
+        // Keep the plain module artifact separate from the deployable shaded plugin.
+        // Otherwise check/architecture tasks can overwrite the runtime API JAR.
+        archiveClassifier.set("plain")
+    }
     processResources {
         val expansion = mapOf("version" to project.version.toString())
         inputs.properties(expansion)
