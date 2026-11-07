@@ -1,6 +1,6 @@
 # Crown branch rollback to a pre-Crown LoreItems binary
 
-Status: procedure plus local evidence, including one isolated Paper 26.2 downgrade and re-upgrade rehearsal; not rehearsed on TEST. Applies to downgrading from the Crown custody branch, which registers schema migrations V12–V18, to upstream `main` at `86999c0` (schema V11) or earlier. The KOTH side is covered separately in the KOTH repository's `docs/crown-rollback.md`.
+Status: procedure plus local evidence, including one isolated Paper 26.2 downgrade and re-upgrade rehearsal; not rehearsed on TEST. Applies to downgrading from the Crown custody branch, which registers schema migrations V12–V18, to a pre-Crown binary (schema V11): this fork's `main` at `d9e15ae6`, upstream `main` at `86999c0`, or earlier. Both have identical `MigrationRunner` and `SQLiteStorageRuntime` sources, so the evidence below, recorded against upstream `86999c0`, applies to both. The KOTH side is covered separately in the KOTH repository's `docs/crown-rollback.md`.
 
 ## What a pre-Crown binary does with a Crown database
 
