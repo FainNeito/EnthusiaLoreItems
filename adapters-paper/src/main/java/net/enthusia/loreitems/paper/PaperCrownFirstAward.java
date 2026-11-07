@@ -49,7 +49,7 @@ public final class PaperCrownFirstAward implements CrownFirstAwardV1 {
             var record = row.orElseThrow();
             var template = new EncodedItemTemplate(record.codecVersion(), record.templateBlob());
             return new PaperCrownSlotExchange(guard).stageFirst(player, request, definition.value(), revision.value(),
-                    template, admission, fence, plugin, primary).thenApply(result -> {
+                    template, new PaperCrownSlotExchange.Staging(admission, fence, plugin, primary)).thenApply(result -> {
                 if (result != PaperCrownSlotExchange.Result.STAGED) return false;
                 player.saveData();
                 return true;

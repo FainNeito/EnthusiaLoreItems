@@ -26,36 +26,43 @@ final class PaperCrownInventoryProbe {
         if (player == null || !player.isOnline()) return Observation.OFFLINE;
         if (!expectedPlayer.equals(player.getUniqueId())) return Observation.UNAVAILABLE;
         try {
-            ItemStack[] contents = player.getInventory().getContents();
-            int count = 0;
-            for (ItemStack item : contents) {
-                int match = classify(item, definition, instance);
-                if (match < 0) return Observation.DUPLICATE_OR_INVALID;
-                count += match;
-            }
-            int cursor = classify(player.getItemOnCursor(), definition, instance);
-            if (cursor < 0) return Observation.DUPLICATE_OR_INVALID;
-            count += cursor;
-            int head = classify(player.getInventory().getHelmet(), definition, instance);
-            if (head < 0 || count > 1 || head > count) return Observation.DUPLICATE_OR_INVALID;
-            if (count == 0) return Observation.MISSING;
-            return head == 1 ? Observation.HEAD_ONLY : Observation.ELSEWHERE;
+            int count = countInventoryAndCursor(player, definition, instance);
+            if (count < 0) return Observation.DUPLICATE_OR_INVALID;
+            return verdict(count, classify(player.getInventory().getHelmet(), definition, instance));
         } catch (RuntimeException failure) {
             return Observation.UNAVAILABLE;
         }
+    }
+
+    /** Matches across the full contents (which include the helmet slot) plus the cursor; -1 on any invalid match. */
+    private int countInventoryAndCursor(Player player, UUID definition, UUID instance) {
+        int count = 0;
+        for (ItemStack item : player.getInventory().getContents()) {
+            int match = classify(item, definition, instance);
+            if (match < 0) return -1;
+            count += match;
+        }
+        int cursor = classify(player.getItemOnCursor(), definition, instance);
+        return cursor < 0 ? -1 : count + cursor;
+    }
+
+    private static Observation verdict(int count, int head) {
+        if (head < 0 || count > 1 || head > count) return Observation.DUPLICATE_OR_INVALID;
+        if (count == 0) return Observation.MISSING;
+        return head == 1 ? Observation.HEAD_ONLY : Observation.ELSEWHERE;
     }
 
     private int classify(ItemStack item, UUID definition, UUID instance) {
         if (item == null || item.getType().isAir()) return 0;
         ItemIdentityReadResult result = codec.readIdentity(item);
         if (result instanceof ItemIdentityReadResult.Invalid) return -1;
-        if (result instanceof ItemIdentityReadResult.Tracked tracked) {
-            boolean sameInstance = tracked.identity().instanceId().value().equals(instance);
-            boolean sameDefinition = tracked.identity().definitionId().value().equals(definition);
-            if (sameInstance || sameDefinition) {
-                return sameInstance && sameDefinition && item.getType() == Material.NETHERITE_HELMET && item.getAmount() == 1 ? 1 : -1;
-            }
-        }
-        return 0;
+        return result instanceof ItemIdentityReadResult.Tracked tracked ? matchTracked(tracked, item, definition, instance) : 0;
+    }
+
+    private static int matchTracked(ItemIdentityReadResult.Tracked tracked, ItemStack item, UUID definition, UUID instance) {
+        boolean sameInstance = tracked.identity().instanceId().value().equals(instance);
+        boolean sameDefinition = tracked.identity().definitionId().value().equals(definition);
+        if (!sameInstance && !sameDefinition) return 0;
+        return sameInstance && sameDefinition && item.getType() == Material.NETHERITE_HELMET && item.getAmount() == 1 ? 1 : -1;
     }
 }

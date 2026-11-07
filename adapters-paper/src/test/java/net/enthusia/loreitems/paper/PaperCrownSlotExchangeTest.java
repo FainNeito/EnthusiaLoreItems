@@ -38,16 +38,7 @@ class PaperCrownSlotExchangeTest {
             holder.getInventory().setItem(3, crown);
             var admission = new java.util.concurrent.CompletableFuture<Boolean>();
             var held = new java.util.concurrent.atomic.AtomicInteger();
-            var store = new net.enthusia.loreitems.application.CrownExchangeAdmission() {
-                public java.util.concurrent.CompletionStage<Boolean> admit(ExclusiveCustodyReservation r, UUID definitionId, boolean empty, byte[] bytes) {
-                    return admission;
-                }
-                public java.util.concurrent.CompletionStage<Boolean> hold(ExclusiveCustodyReservation r) {
-                    assertEquals(request, r);
-                    held.incrementAndGet();
-                    return java.util.concurrent.CompletableFuture.completedFuture(true);
-                }
-            };
+            var store = pendingAdmission(admission, held, request);
             var fence = new PaperCrownPreparationFence(guard);
             var result = new PaperCrownSlotExchange(guard).stage(holder, request, definition, 3, store,
                     fence, plugin, Runnable::run).toCompletableFuture();
@@ -70,6 +61,21 @@ class PaperCrownSlotExchangeTest {
             assertFalse(swapCancelled(server, holder));
             assertNotNull(fence.begin(holder.getUniqueId()));
         } finally { MockBukkit.unmock(); }
+    }
+
+    private static net.enthusia.loreitems.application.CrownExchangeAdmission pendingAdmission(
+            java.util.concurrent.CompletableFuture<Boolean> admission, java.util.concurrent.atomic.AtomicInteger held,
+            ExclusiveCustodyReservation request) {
+        return new net.enthusia.loreitems.application.CrownExchangeAdmission() {
+            public java.util.concurrent.CompletionStage<Boolean> admit(ExclusiveCustodyReservation r, UUID definitionId, boolean empty, byte[] bytes) {
+                return admission;
+            }
+            public java.util.concurrent.CompletionStage<Boolean> hold(ExclusiveCustodyReservation r) {
+                assertEquals(request, r);
+                held.incrementAndGet();
+                return java.util.concurrent.CompletableFuture.completedFuture(true);
+            }
+        };
     }
 
     private static boolean swapCancelled(org.mockbukkit.mockbukkit.ServerMock server, org.bukkit.entity.Player player) {
@@ -112,45 +118,55 @@ class PaperCrownSlotExchangeTest {
                 }
             } else player.getInventory().setItem(3, crown);
             var exchange = new PaperCrownSlotExchange(guard);
-            // Register the provider's existing instance and its last confirmed player location.
-            try (var c = factory.open(); var s = c.createStatement()) {
-                s.execute("INSERT INTO lore_definitions VALUES ('" + definition + "','crown','Crown',1,1,NULL)");
-                try (var insert = c.prepareStatement("INSERT INTO lore_definition_revisions VALUES (?,1,1,?,1)")) {
-                    insert.setString(1, definition.toString()); insert.setBytes(2, template.payload()); insert.executeUpdate();
-                }
-                if (!first) {
-                s.execute("INSERT INTO lore_instances VALUES ('" + request.instanceId() + "','" + definition + "',1,1,'ACTIVE',1,NULL)");
-                String location = "player:" + player.getUniqueId();
-                s.execute("INSERT INTO instance_observations (observation_id,instance_id,definition_id,location_type,location_key,"
-                        + "confidence,source,observed_at) VALUES (1,'" + request.instanceId() + "','" + definition
-                        + "','PLAYER_INVENTORY','" + location + "','CONFIRMED_NOW','fixture',1)");
-                s.execute("INSERT INTO instance_current_state (instance_id,state,location_type,location_key,last_observation_id,"
-                        + "state_revision,updated_at) VALUES ('" + request.instanceId() + "','CONFIRMED_NOW','PLAYER_INVENTORY','" + location + "',1,0,1)");
-            }
-            }
+            registerProvider(factory, definition, template, first ? null : request, player.getUniqueId());
             var callbacks = new java.util.concurrent.LinkedBlockingQueue<Runnable>();
-            var fence = new PaperCrownPreparationFence(guard);
-            var plugin = MockBukkit.createMockPlugin();
-            var result = first ? exchange.stageFirst(player, request, definition, 1, template, admission, fence, plugin, callbacks::add)
-                    : exchange.stage(player, request, definition, 3, admission, fence, plugin, callbacks::add);
+            var staging = new PaperCrownSlotExchange.Staging(admission, new PaperCrownPreparationFence(guard),
+                    MockBukkit.createMockPlugin(), callbacks::add);
+            var result = first ? exchange.stageFirst(player, request, definition, 1, template, staging)
+                    : exchange.stage(player, request, definition, 3, staging.admission(), staging.fence(), staging.plugin(), callbacks::add);
             var callback = callbacks.poll(10, java.util.concurrent.TimeUnit.SECONDS);
             assertNotNull(callback);
             assertEquals(original, player.getInventory().getHelmet());
             assertFalse(admission.admit(request, definition, false, original.serializeAsBytes()).toCompletableFuture().join());
             callback.run();
             assertEquals(PaperCrownSlotExchange.Result.STAGED, result.toCompletableFuture().join());
-            assertEquals(new net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked(identity),
-                    new PaperItemIdentityCodec(guard).readIdentity(player.getInventory().getHelmet()));
-            if (first) assertEquals(Material.STONE, player.getInventory().getItem(3).getType());
-            else assertNull(player.getInventory().getItem(3));
-            var escrow = player.getPersistentDataContainer().get(new NamespacedKey("enthusialoreitems","crown_exchange"),
-                    PersistentDataType.TAG_CONTAINER);
-            assertNotNull(escrow);
-            assertArrayEquals(original.serializeAsBytes(), escrow.get(new NamespacedKey("enthusialoreitems","original"),
-                    PersistentDataType.BYTE_ARRAY));
+            assertStagedWithSealedOriginal(player, guard, identity, original, first);
         } finally {
             storage.close(java.time.Duration.ofSeconds(5));
             MockBukkit.unmock();
         }
+    }
+
+    /** Register the provider definition and, for an existing Crown, its instance and last confirmed player location. */
+    private static void registerProvider(net.enthusia.loreitems.sqlite.SQLiteConnectionFactory factory, UUID definition,
+            net.enthusia.loreitems.application.EncodedItemTemplate template, ExclusiveCustodyReservation existing,
+            UUID holder) throws Exception {
+        try (var c = factory.open(); var s = c.createStatement()) {
+            s.execute("INSERT INTO lore_definitions VALUES ('" + definition + "','crown','Crown',1,1,NULL)");
+            try (var insert = c.prepareStatement("INSERT INTO lore_definition_revisions VALUES (?,1,1,?,1)")) {
+                insert.setString(1, definition.toString()); insert.setBytes(2, template.payload()); insert.executeUpdate();
+            }
+            if (existing == null) return;
+            s.execute("INSERT INTO lore_instances VALUES ('" + existing.instanceId() + "','" + definition + "',1,1,'ACTIVE',1,NULL)");
+            String location = "player:" + holder;
+            s.execute("INSERT INTO instance_observations (observation_id,instance_id,definition_id,location_type,location_key,"
+                    + "confidence,source,observed_at) VALUES (1,'" + existing.instanceId() + "','" + definition
+                    + "','PLAYER_INVENTORY','" + location + "','CONFIRMED_NOW','fixture',1)");
+            s.execute("INSERT INTO instance_current_state (instance_id,state,location_type,location_key,last_observation_id,"
+                    + "state_revision,updated_at) VALUES ('" + existing.instanceId() + "','CONFIRMED_NOW','PLAYER_INVENTORY','" + location + "',1,0,1)");
+        }
+    }
+
+    private static void assertStagedWithSealedOriginal(org.bukkit.entity.Player player, PaperItemCodecThreadGuard guard,
+            LoreItemIdentity identity, ItemStack original, boolean first) {
+        assertEquals(new net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked(identity),
+                new PaperItemIdentityCodec(guard).readIdentity(player.getInventory().getHelmet()));
+        if (first) assertEquals(Material.STONE, player.getInventory().getItem(3).getType());
+        else assertNull(player.getInventory().getItem(3));
+        var escrow = player.getPersistentDataContainer().get(new NamespacedKey("enthusialoreitems","crown_exchange"),
+                PersistentDataType.TAG_CONTAINER);
+        assertNotNull(escrow);
+        assertArrayEquals(original.serializeAsBytes(), escrow.get(new NamespacedKey("enthusialoreitems","original"),
+                PersistentDataType.BYTE_ARRAY));
     }
 }

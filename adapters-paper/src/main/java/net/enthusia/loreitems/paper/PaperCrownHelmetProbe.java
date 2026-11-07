@@ -27,13 +27,17 @@ final class PaperCrownHelmetProbe {
         if (helmet == null || helmet.getType().isAir()) return Observation.EMPTY;
         ItemIdentityReadResult result = identityCodec.readIdentity(helmet);
         if (result instanceof ItemIdentityReadResult.Tracked tracked) {
-            if (helmet.getAmount() != 1 && (tracked.identity().instanceId().value().equals(expectedInstance)
-                    || tracked.identity().definitionId().value().equals(expectedDefinition))) return Observation.INVALID_IDENTITY;
-            return tracked.identity().instanceId().value().equals(expectedInstance)
-                    && tracked.identity().definitionId().value().equals(expectedDefinition)
-                    ? Observation.EXPECTED_INSTANCE : Observation.OTHER_TRACKED_ITEM;
+            return classifyTracked(tracked, helmet.getAmount(), expectedDefinition, expectedInstance);
         }
         if (result instanceof ItemIdentityReadResult.Invalid) return Observation.INVALID_IDENTITY;
         return Observation.UNTRACKED_ITEM;
+    }
+
+    private static Observation classifyTracked(ItemIdentityReadResult.Tracked tracked, int amount, UUID expectedDefinition,
+            UUID expectedInstance) {
+        boolean sameInstance = tracked.identity().instanceId().value().equals(expectedInstance);
+        boolean sameDefinition = tracked.identity().definitionId().value().equals(expectedDefinition);
+        if (amount != 1 && (sameInstance || sameDefinition)) return Observation.INVALID_IDENTITY;
+        return sameInstance && sameDefinition ? Observation.EXPECTED_INSTANCE : Observation.OTHER_TRACKED_ITEM;
     }
 }

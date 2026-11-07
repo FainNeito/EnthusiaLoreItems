@@ -1,5 +1,7 @@
 package net.enthusia.loreitems.sqlite;
 
+import static net.enthusia.loreitems.sqlite.SQLiteCustodyEvidence.*;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -7,9 +9,6 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.Arrays;
-import java.util.HexFormat;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.CompletionStage;
 import net.enthusia.loreitems.domain.ExclusiveCustodyReservation;
 
@@ -21,7 +20,6 @@ final class SQLiteExclusiveCustodyJournal {
     enum Result { RESERVED, REPLAY, REVIEW_REQUIRED, CONFLICT }
     enum RecoveryResult { NO_RESERVATION, AWAITING_FIRST_JOIN, REVIEW_REQUIRED, ALREADY_IN_REVIEW, EQUIPPED }
     enum HelmetEvidenceResult { RECORDED, REPLAY, HOLD }
-    private static final int MAX_HELMET_EVIDENCE_BYTES = 1024 * 1024;
 
     /**
      * Stores opaque helmet evidence before any inventory mutation. The blob is never returned
@@ -65,17 +63,7 @@ final class SQLiteExclusiveCustodyJournal {
 
     private HelmetEvidenceResult storeHelmetEvidence(Connection connection, ExclusiveCustodyReservation request, byte[] evidence, boolean empty)
             throws SQLException {
-        try (PreparedStatement current = connection.prepareStatement(
-                "SELECT state FROM crown_custody WHERE singleton=1 AND operation_id=? "
-                + "AND instance_id=? AND holder_id=? AND generation=?")) {
-            current.setString(1, request.operationId().toString());
-            current.setString(2, request.instanceId().toString());
-            current.setString(3, request.holderId().toString());
-            current.setLong(4, request.generation());
-            try (ResultSet row = current.executeQuery()) {
-                if (!row.next() || !"RESERVED".equals(row.getString(1))) return HelmetEvidenceResult.HOLD;
-            }
-        }
+        if (!currentlyReserved(connection, request)) return HelmetEvidenceResult.HOLD;
         requireAudit(connection, request, "RESERVED");
         requireNoForeignHelmetEvidence(connection, request);
         try (PreparedStatement insert = connection.prepareStatement(
@@ -92,6 +80,28 @@ final class SQLiteExclusiveCustodyJournal {
                 return HelmetEvidenceResult.RECORDED;
             }
         }
+        if (!sameStoredEvidence(connection, request, evidence, empty)) return HelmetEvidenceResult.HOLD;
+        requireAudit(connection, request, "HELMET_EVIDENCE");
+        return HelmetEvidenceResult.REPLAY;
+    }
+
+    private static boolean currentlyReserved(Connection connection, ExclusiveCustodyReservation request) throws SQLException {
+        try (PreparedStatement current = connection.prepareStatement(
+                "SELECT state FROM crown_custody WHERE singleton=1 AND operation_id=? "
+                + "AND instance_id=? AND holder_id=? AND generation=?")) {
+            current.setString(1, request.operationId().toString());
+            current.setString(2, request.instanceId().toString());
+            current.setString(3, request.holderId().toString());
+            current.setLong(4, request.generation());
+            try (ResultSet row = current.executeQuery()) {
+                return row.next() && "RESERVED".equals(row.getString(1));
+            }
+        }
+    }
+
+    /** A replay must carry byte-identical evidence, digest and empty marker. */
+    private static boolean sameStoredEvidence(Connection connection, ExclusiveCustodyReservation request, byte[] evidence,
+            boolean empty) throws SQLException {
         try (PreparedStatement existing = connection.prepareStatement(
                 "SELECT payload,payload_sha256,is_empty FROM crown_helmet_evidence WHERE operation_id=? AND instance_id=? AND holder_id=? AND generation=?")) {
             existing.setString(1, request.operationId().toString());
@@ -99,19 +109,9 @@ final class SQLiteExclusiveCustodyJournal {
             existing.setString(3, request.holderId().toString());
             existing.setLong(4, request.generation());
             try (ResultSet row = existing.executeQuery()) {
-                if (!row.next() || !Arrays.equals(evidence, row.getBytes(1)) || !fingerprint(evidence).equals(row.getString(2))
-                        || row.getInt(3) != (empty ? 1 : 0) || row.wasNull()) return HelmetEvidenceResult.HOLD;
+                return row.next() && Arrays.equals(evidence, row.getBytes(1)) && fingerprint(evidence).equals(row.getString(2))
+                        && row.getInt(3) == (empty ? 1 : 0) && !row.wasNull();
             }
-        }
-        requireAudit(connection, request, "HELMET_EVIDENCE");
-        return HelmetEvidenceResult.REPLAY;
-    }
-
-    static String fingerprint(byte[] evidence) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(evidence));
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 unavailable", impossible);
         }
     }
 
@@ -175,68 +175,6 @@ final class SQLiteExclusiveCustodyJournal {
             }
             appendAudit(connection, request, "REVIEW_REQUIRED");
             return RecoveryResult.REVIEW_REQUIRED;
-        }
-    }
-
-    private static void requireNoOrphanEvidence(Connection connection) throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement(
-                "SELECT 1 FROM crown_custody_audit UNION ALL SELECT 1 FROM crown_helmet_evidence LIMIT 1");
-             ResultSet rows = query.executeQuery()) {
-            if (rows.next()) throw new SQLException("Orphaned Crown evidence requires review");
-        }
-    }
-
-    private static void verifyHelmetEvidenceIfPresent(Connection connection, ExclusiveCustodyReservation request)
-            throws SQLException {
-        requireNoForeignHelmetEvidence(connection, request);
-        boolean present;
-        try (PreparedStatement query = connection.prepareStatement(
-                "SELECT instance_id,holder_id,generation,payload,payload_sha256,is_empty FROM crown_helmet_evidence WHERE operation_id=?")) {
-            query.setString(1, request.operationId().toString());
-            try (ResultSet row = query.executeQuery()) {
-                present = row.next();
-                if (present) {
-                    byte[] bytes = row.getBytes(4);
-                    int empty = row.getInt(6);
-                    if (row.wasNull() || (empty != 0 && empty != 1)) throw new SQLException("Invalid empty-helmet evidence marker");
-                    if (!request.instanceId().toString().equals(row.getString(1))
-                            || !request.holderId().toString().equals(row.getString(2))
-                            || request.generation() != row.getLong(3) || row.wasNull()
-                            || bytes == null || (bytes.length == 0) != (empty == 1) || bytes.length > MAX_HELMET_EVIDENCE_BYTES
-                            || !fingerprint(bytes).equals(row.getString(5))) {
-                        throw new SQLException("Helmet evidence is invalid or inconsistent");
-                    }
-                }
-            }
-        }
-        if (present) {
-            requireAudit(connection, request, "HELMET_EVIDENCE");
-        } else {
-            try (PreparedStatement query = connection.prepareStatement(
-                    "SELECT 1 FROM crown_custody_audit WHERE operation_id=? AND transition='HELMET_EVIDENCE'")) {
-                query.setString(1, request.operationId().toString());
-                try (ResultSet rows = query.executeQuery()) {
-                    if (rows.next()) throw new SQLException("Helmet evidence is missing");
-                }
-            }
-        }
-    }
-
-    private static void requireNoForeignHelmetEvidence(Connection connection, ExclusiveCustodyReservation request)
-            throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement(
-                "SELECT 1 FROM crown_helmet_evidence WHERE operation_id<>? "
-                + "UNION ALL SELECT 1 FROM crown_custody_audit "
-                + "WHERE operation_id<>? OR instance_id<>? OR holder_id<>? OR generation<>? "
-                + "OR transition NOT IN ('RESERVED','FIRST_ISSUE','HELMET_EVIDENCE','REVIEW_REQUIRED') LIMIT 1")) {
-            query.setString(1, request.operationId().toString());
-            query.setString(2, request.operationId().toString());
-            query.setString(3, request.instanceId().toString());
-            query.setString(4, request.holderId().toString());
-            query.setLong(5, request.generation());
-            try (ResultSet rows = query.executeQuery()) {
-                if (rows.next()) throw new SQLException("Unexpected Crown helmet evidence requires review");
-            }
         }
     }
 
@@ -403,40 +341,16 @@ final class SQLiteExclusiveCustodyJournal {
                         return replay;
                     }
                 }
-                if (joinedDefinition != null) {
-                    var conflicts = new java.util.HashSet<>(SQLiteCrownIdentityAudit.inspect(connection,
-                            joinedDefinition.toString(), request.instanceId().toString()));
-                    conflicts.remove(SQLiteCrownIdentityAudit.Finding.LIVE_PHYSICAL_PROOF_REQUIRED);
-                    conflicts.remove(SQLiteCrownIdentityAudit.Finding.LOCATION_UNCERTAIN);
-                    if (!firstIssue(connection, request) || !conflicts.isEmpty()) {
-                        connection.rollback();
-                        return java.util.Optional.empty();
-                    }
-                    try (var location = connection.prepareStatement("SELECT 1 FROM instance_current_state WHERE instance_id=? "
-                            + "AND (location_type IS NOT 'PLAYER_INVENTORY' OR location_key IS NOT ?)")) {
-                        location.setString(1, request.instanceId().toString());
-                        location.setString(2, "player:" + request.holderId());
-                        try (var rows = location.executeQuery()) {
-                            if (rows.next()) {
-                                connection.rollback();
-                                return java.util.Optional.empty();
-                            }
-                        }
-                    }
+                if (joinedDefinition != null && !firstIssueStillSole(connection, request, joinedDefinition)) {
+                    connection.rollback();
+                    return java.util.Optional.empty();
                 }
                 requireAudit(connection, request, "RESERVED");
                 requireAudit(connection, request, "HELMET_EVIDENCE");
                 verifyHelmetEvidenceIfPresent(connection, request);
-                try (PreparedStatement retire = connection.prepareStatement(
-                        "UPDATE crown_helmet_evidence SET payload=X'' WHERE operation_id=? AND "
-                        + "instance_id=? AND holder_id=? AND generation=? AND payload=? AND payload_sha256=?")) {
-                    bindIdentity(retire, request);
-                    retire.setBytes(5, snapshot);
-                    retire.setString(6, digest);
-                    if (retire.executeUpdate() != 1) {
-                        connection.rollback();
-                        return java.util.Optional.empty();
-                    }
+                if (!retireEvidence(connection, request, snapshot, digest)) {
+                    connection.rollback();
+                    return java.util.Optional.empty();
                 }
                 appendAudit(connection, request, "EQUIPPED");
                 var receipt = equippedDigest(connection, request).orElseThrow(() -> new SQLException("Invalid equipped receipt"));
@@ -449,6 +363,37 @@ final class SQLiteExclusiveCustodyJournal {
         });
     }
 
+    /** A joined first issue still has no conflicting provider record and no location outside this holder. */
+    private static boolean firstIssueStillSole(Connection connection, ExclusiveCustodyReservation request, UUID joinedDefinition)
+            throws SQLException {
+        var conflicts = new java.util.HashSet<>(SQLiteCrownIdentityAudit.inspect(connection,
+                joinedDefinition.toString(), request.instanceId().toString()));
+        conflicts.remove(SQLiteCrownIdentityAudit.Finding.LIVE_PHYSICAL_PROOF_REQUIRED);
+        conflicts.remove(SQLiteCrownIdentityAudit.Finding.LOCATION_UNCERTAIN);
+        if (!firstIssue(connection, request) || !conflicts.isEmpty()) return false;
+        try (var location = connection.prepareStatement("SELECT 1 FROM instance_current_state WHERE instance_id=? "
+                + "AND (location_type IS NOT 'PLAYER_INVENTORY' OR location_key IS NOT ?)")) {
+            location.setString(1, request.instanceId().toString());
+            location.setString(2, "player:" + request.holderId());
+            try (var rows = location.executeQuery()) {
+                return !rows.next();
+            }
+        }
+    }
+
+    /** Clears the sealed original exactly once; any other row count leaves the commit to roll back. */
+    private static boolean retireEvidence(Connection connection, ExclusiveCustodyReservation request, byte[] snapshot, String digest)
+            throws SQLException {
+        try (PreparedStatement retire = connection.prepareStatement(
+                "UPDATE crown_helmet_evidence SET payload=X'' WHERE operation_id=? AND "
+                + "instance_id=? AND holder_id=? AND generation=? AND payload=? AND payload_sha256=?")) {
+            bindIdentity(retire, request);
+            retire.setBytes(5, snapshot);
+            retire.setString(6, digest);
+            return retire.executeUpdate() == 1;
+        }
+    }
+
     CompletionStage<java.util.Optional<String>> readEquipment(SQLiteStorageRuntime storage, ExclusiveCustodyReservation request) {
         return storage.execute(connection -> {
             connection.setAutoCommit(false);
@@ -459,13 +404,6 @@ final class SQLiteExclusiveCustodyJournal {
             }
         });
     }
-    static void bindIdentity(PreparedStatement statement, ExclusiveCustodyReservation request) throws SQLException {
-        statement.setString(1, request.operationId().toString());
-        statement.setString(2, request.instanceId().toString());
-        statement.setString(3, request.holderId().toString());
-        statement.setLong(4, request.generation());
-    }
-
     static boolean canRecordDeath(Connection connection, ExclusiveCustodyReservation request) throws SQLException {
         if (equippedDigest(connection, request).isPresent()) return true;
         // A holder can die immediately after staging, before the first fresh player save is loaded.
@@ -482,38 +420,6 @@ final class SQLiteExclusiveCustodyJournal {
         return true;
     }
 
-    private static boolean firstIssue(Connection connection, ExclusiveCustodyReservation request) throws SQLException {
-        try (var query = connection.prepareStatement("SELECT 1 FROM crown_custody_audit WHERE transition='FIRST_ISSUE'");
-             var rows = query.executeQuery()) {
-            if (!rows.next()) return false;
-            requireAudit(connection, request, "FIRST_ISSUE");
-            return true;
-        }
-    }
-
-    static java.util.Optional<String> equippedDigest(Connection connection, ExclusiveCustodyReservation request)
-            throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement(
-                "SELECT e.payload_sha256,e.is_empty FROM crown_custody s JOIN crown_helmet_evidence e "
-                + "USING(operation_id,instance_id,holder_id,generation) WHERE singleton=1 AND operation_id=? AND instance_id=? "
-                + "AND holder_id=? AND generation=? AND state='EQUIPPED' AND e.payload=X'' "
-                + "AND (SELECT count(*) FROM crown_custody_audit)=? "
-                + "AND (SELECT count(*) FROM crown_helmet_evidence)=1")) {
-            bindIdentity(query, request);
-            query.setInt(5, firstIssue(connection, request) ? 4 : 3);
-            try (ResultSet rows = query.executeQuery()) {
-                if (!rows.next()) return java.util.Optional.empty();
-                String digest = rows.getString(1);
-                int empty = rows.getInt(2);
-                if (rows.wasNull() || (empty != 0 && empty != 1) || digest == null || !digest.matches("[0-9a-f]{64}")
-                        || fingerprint(new byte[0]).equals(digest) != (empty == 1)) throw new SQLException("Invalid equipped digest");
-                requireAudit(connection, request, "RESERVED");
-                requireAudit(connection, request, "HELMET_EVIDENCE");
-                requireAudit(connection, request, "EQUIPPED");
-                return java.util.Optional.of(digest);
-            }
-        }
-    }
     /** The review transition and its audit entry either both commit or both roll back. */
     CompletionStage<Boolean> holdCommitted(SQLiteStorageRuntime storage, ExclusiveCustodyReservation request) {
         Objects.requireNonNull(storage, "storage");
@@ -544,58 +450,6 @@ final class SQLiteExclusiveCustodyJournal {
         });
     }
 
-    /** A retry only confirms the same durable hold; it never releases or transfers custody. */
-    private static boolean isExactReviewHold(Connection connection, ExclusiveCustodyReservation request)
-            throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement(
-                "SELECT 1 FROM crown_custody WHERE singleton=1 AND operation_id=? "
-                + "AND instance_id=? AND holder_id=? AND generation=? AND state='REVIEW_REQUIRED'")) {
-            query.setString(1, request.operationId().toString());
-            query.setString(2, request.instanceId().toString());
-            query.setString(3, request.holderId().toString());
-            query.setLong(4, request.generation());
-            try (ResultSet row = query.executeQuery()) { return row.next(); }
-        }
-    }
-
-    private static boolean hasReservation(Connection connection) throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement("SELECT 1 FROM crown_custody WHERE singleton=1");
-             ResultSet rows = query.executeQuery()) {
-            return rows.next();
-        }
-    }
-
-    private static void requireAudit(Connection connection, ExclusiveCustodyReservation request, String transition)
-            throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement(
-                "SELECT 1 FROM crown_custody_audit WHERE operation_id=? AND transition=? "
-                + "AND instance_id=? AND holder_id=? AND generation=?")) {
-            query.setString(1, request.operationId().toString());
-            query.setString(2, transition);
-            query.setString(3, request.instanceId().toString());
-            query.setString(4, request.holderId().toString());
-            query.setLong(5, request.generation());
-            try (ResultSet rows = query.executeQuery()) {
-                if (!rows.next()) throw new SQLException("Custody audit is missing or inconsistent");
-            }
-        }
-    }
-
-    static void appendAudit(Connection connection, ExclusiveCustodyReservation request, String transition)
-            throws SQLException {
-        try (PreparedStatement audit = connection.prepareStatement(
-                "INSERT INTO crown_custody_audit "
-                + "(operation_id,transition,instance_id,holder_id,generation,recorded_at) VALUES (?,?,?,?,?,?)")) {
-            audit.setString(1, request.operationId().toString());
-            audit.setString(2, transition);
-            audit.setString(3, request.instanceId().toString());
-            audit.setString(4, request.holderId().toString());
-            audit.setLong(5, request.generation());
-            audit.setLong(6, System.currentTimeMillis());
-            if (audit.executeUpdate() != 1) throw new SQLException("Custody audit was not recorded");
-        }
-    }
-
     Result reserve(Connection connection, ExclusiveCustodyReservation request) throws SQLException {
         Objects.requireNonNull(connection, "connection");
         Objects.requireNonNull(request, "request");
@@ -611,6 +465,11 @@ final class SQLiteExclusiveCustodyJournal {
             insert.setLong(4, request.generation());
             if (insert.executeUpdate() == 1) return Result.RESERVED;
         }
+        return existingReservation(connection, request);
+    }
+
+    /** The singleton was already taken: only the identical operation can replay or report review. */
+    private static Result existingReservation(Connection connection, ExclusiveCustodyReservation request) throws SQLException {
         try (PreparedStatement query = connection.prepareStatement(
                 "SELECT operation_id,instance_id,holder_id,generation,state FROM crown_custody WHERE singleton=1");
              ResultSet row = query.executeQuery()) {

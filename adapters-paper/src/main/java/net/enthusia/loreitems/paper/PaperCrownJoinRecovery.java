@@ -3,6 +3,7 @@ package net.enthusia.loreitems.paper;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import net.enthusia.loreitems.application.CrownEquipmentRecovery;
+import net.enthusia.loreitems.domain.ExclusiveCustodyReservation;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -91,34 +92,58 @@ public final class PaperCrownJoinRecovery implements Listener {
         final UUID operation;
         try {operation=UUID.fromString(marker);}catch(IllegalArgumentException | NullPointerException invalid){return;}
         recovery.releasedReclamation(player.getUniqueId(),operation).thenAcceptAsync(result -> {
-            if(!active.getAsBoolean() || !player.isOnline() || player.isDead() ||
-                    plugin.getServer().getPlayer(player.getUniqueId())!=player || result.isEmpty())return;
-            var proof=result.get();var escrow=data.get(ESCROW,org.bukkit.persistence.PersistentDataType.TAG_CONTAINER);
-            if(!marker.equals(data.get(RECLAIMED,org.bukkit.persistence.PersistentDataType.STRING)) || escrow==null ||
-                    !PaperCrownSlotExchange.matches(escrow,proof.source()) ||
-                    new PaperCrownInventoryProbe(PaperItemCodecThreadGuard.system()).observe(player,player.getUniqueId(),
-                            proof.definition(),proof.source().instanceId())!=PaperCrownInventoryProbe.Observation.MISSING ||
-                    !new PaperCrownSavedPlayer().confirmAbsenceIncludingFallback(player,proof.source().instanceId(),proof.definition()))return;
+            if(!live(player) || !current(player, player.getUniqueId()) || result.isEmpty())return;
+            var proof=result.get();
+            if(!reclaimedAndAbsent(player,marker,proof.source(),proof.definition(),player.getUniqueId()))return;
             data.remove(ESCROW);data.remove(RECLAIMED);player.saveData();
             receive(player);
         },this::onMain).exceptionally(this::reportFailure);
     }
 
+    /** The holder's save still names this reclamation and the escrowed Crown is absent from every location. */
+    private boolean reclaimedAndAbsent(Player player, String operation, ExclusiveCustodyReservation source, UUID definition,
+            UUID expectedPlayer) {
+        var data = player.getPersistentDataContainer();
+        var escrow = data.get(ESCROW,org.bukkit.persistence.PersistentDataType.TAG_CONTAINER);
+        return operation.equals(data.get(RECLAIMED,org.bukkit.persistence.PersistentDataType.STRING)) && escrow != null
+                && PaperCrownSlotExchange.matches(escrow,source)
+                && new PaperCrownInventoryProbe(PaperItemCodecThreadGuard.system()).observe(player,expectedPlayer,
+                        definition,source.instanceId()) == PaperCrownInventoryProbe.Observation.MISSING
+                && new PaperCrownSavedPlayer().confirmAbsenceIncludingFallback(player,source.instanceId(),definition);
+    }
+
+    private boolean live(Player player) {
+        return active.getAsBoolean() && player.isOnline() && !player.isDead();
+    }
+
+    private boolean current(Player player, UUID holder) {
+        return plugin.getServer().getPlayer(holder) == player;
+    }
+
+    private boolean marks(Player player, ExclusiveCustodyReservation source) {
+        return exchange.markedCrown(player).filter(source::equals).isPresent();
+    }
+
+    private boolean holdsMarkedCrown(Player player, ExclusiveCustodyReservation source) {
+        return live(player) && current(player, source.holderId()) && marks(player, source);
+    }
+
+    private static boolean helmetIs(Player player, byte[] expected) {
+        var current = player.getInventory().getHelmet();
+        return current != null && java.util.Arrays.equals(expected, current.serializeAsBytes());
+    }
+
     private void recover(Player session, boolean freshJoin) {
         if (!active.getAsBoolean()) return;
-        if (!session.getPersistentDataContainer().has(ESCROW)) {
+        var data = session.getPersistentDataContainer();
+        if (!data.has(ESCROW)) {
             if (freshJoin) receive(session);
             return;
         }
-        if (session.getPersistentDataContainer().has(RECLAIMED)) {
-            clearReleasedReclamation(session);
-            recovery.findReclamation(session.getUniqueId()).thenAcceptAsync(request ->
-                    request.ifPresent(value -> confirmSavedReclamation(session, value)), this::onMain)
-                    .exceptionally(this::reportFailure);
+        if (data.has(RECLAIMED)) {
+            resumeReclamation(session);
             return;
         }
-        UUID holder = session.getUniqueId();
-        var data = session.getPersistentDataContainer();
         var marker = new NamespacedKey(plugin, "crown_released");
         if (data.has(marker)) {
             if (freshJoin) confirmRemoval(session, marker);
@@ -129,28 +154,44 @@ public final class PaperCrownJoinRecovery implements Listener {
             if (saved(session, true)) finalizeIncoming(session, incoming);
             return;
         }
+        resumeEscrow(session, freshJoin, marker);
+    }
+
+    private void resumeReclamation(Player session) {
+        clearReleasedReclamation(session);
+        recovery.findReclamation(session.getUniqueId()).thenAcceptAsync(request ->
+                request.ifPresent(value -> confirmSavedReclamation(session, value)), this::onMain)
+                .exceptionally(this::reportFailure);
+    }
+
+    private void resumeEscrow(Player session, boolean freshJoin, NamespacedKey marker) {
+        UUID holder = session.getUniqueId();
         var loaded = (freshJoin || saved(session,true)) ? exchange.readLoadedExchange(session) : java.util.Optional.<PaperCrownSlotExchange.LoadedExchange>empty();
         var decision = loaded.map(save -> recovery.confirmLoaded(save.reservation(), save.definition(), save.original()))
                 .orElseGet(() -> recovery.findEquipped(holder));
-        decision.thenAcceptAsync(result -> {
-            if (!active.getAsBoolean() || plugin.getServer().getPlayer(holder) != session || !session.isOnline()) return;
-            if (result.isEmpty()) {
-                plugin.getLogger().warning("Crown escrow has no matching committed equipment receipt for " + holder);
-                return;
-            }
-            var receipt = result.orElseThrow();
-            if (!exchange.finishCommitted(session, receipt.reservation(), receipt.definition(), receipt.originalDigest())) {
-                plugin.getLogger().warning("Crown escrow requires review for " + holder);
-            } else {
-                recovery.findReclamation(holder).thenAcceptAsync(request -> {
-                    if (request.isPresent()) stageReclamation(session, request.get());
-                    else stageRemoval(session, receipt, marker);
-                }, this::onMain).exceptionally(this::reportFailure);
-            }
-        }, task -> plugin.getServer().getScheduler().runTask(plugin, task)).exceptionally(failure -> {
+        decision.thenAcceptAsync(result -> finishEscrow(session, holder, result, marker),
+                task -> plugin.getServer().getScheduler().runTask(plugin, task)).exceptionally(failure -> {
             if (active.getAsBoolean()) plugin.getLogger().log(java.util.logging.Level.WARNING, "Crown recovery failed for " + holder, failure);
             return null;
         });
+    }
+
+    private void finishEscrow(Player session, UUID holder, java.util.Optional<CrownEquipmentRecovery.Receipt> result,
+            NamespacedKey marker) {
+        if (!active.getAsBoolean() || !current(session, holder) || !session.isOnline()) return;
+        if (result.isEmpty()) {
+            plugin.getLogger().warning("Crown escrow has no matching committed equipment receipt for " + holder);
+            return;
+        }
+        var receipt = result.orElseThrow();
+        if (!exchange.finishCommitted(session, receipt.reservation(), receipt.definition(), receipt.originalDigest())) {
+            plugin.getLogger().warning("Crown escrow requires review for " + holder);
+            return;
+        }
+        recovery.findReclamation(holder).thenAcceptAsync(request -> {
+            if (request.isPresent()) stageReclamation(session, request.get());
+            else stageRemoval(session, receipt, marker);
+        }, this::onMain).exceptionally(this::reportFailure);
     }
     private boolean saved(Player player, boolean equipped) {
         var request = exchange.markedCrown(player);
@@ -162,18 +203,12 @@ public final class PaperCrownJoinRecovery implements Listener {
 
     private void stageReclamation(Player player, CrownEquipmentRecovery.Reclamation request) {
         var source = request.source().reservation();
-        if (request.held() || !active.getAsBoolean() || player.isDead() || !player.isOnline()
-                || plugin.getServer().getPlayer(source.holderId()) != player
-                || exchange.markedCrown(player).filter(source::equals).isEmpty() || !saved(player,true)) return;
+        if (request.held() || !holdsMarkedCrown(player, source) || !saved(player,true)) return;
         var crown = player.getInventory().getHelmet();
         if (crown == null) return;
         byte[] original = crown.serializeAsBytes();
         recovery.stageReclamation(request,original).thenAcceptAsync(staged -> {
-            if (!staged || !active.getAsBoolean() || !player.isOnline() || player.isDead()
-                    || plugin.getServer().getPlayer(source.holderId()) != player
-                    || exchange.markedCrown(player).filter(source::equals).isEmpty()) return;
-            var current = player.getInventory().getHelmet();
-            if (current == null || !java.util.Arrays.equals(original,current.serializeAsBytes())) return;
+            if (!staged || !holdsMarkedCrown(player, source) || !helmetIs(player, original)) return;
             player.getPersistentDataContainer().set(RECLAIMED,org.bukkit.persistence.PersistentDataType.STRING,
                     request.operation().toString());
             player.getInventory().setHelmet(null);
@@ -184,15 +219,8 @@ public final class PaperCrownJoinRecovery implements Listener {
 
     private void confirmSavedReclamation(Player player, CrownEquipmentRecovery.Reclamation request) {
         var source = request.source().reservation();
-        var data = player.getPersistentDataContainer();
-        var escrow = data.get(ESCROW,org.bukkit.persistence.PersistentDataType.TAG_CONTAINER);
-        if (!active.getAsBoolean() || !player.isOnline() || player.isDead()
-                || plugin.getServer().getPlayer(source.holderId()) != player || escrow == null
-                || !PaperCrownSlotExchange.matches(escrow,source)
-                || !request.operation().toString().equals(data.get(RECLAIMED,org.bukkit.persistence.PersistentDataType.STRING))
-                || new PaperCrownInventoryProbe(PaperItemCodecThreadGuard.system()).observe(player,
-                        source.holderId(),request.source().definition(),source.instanceId()) != PaperCrownInventoryProbe.Observation.MISSING
-                || !new PaperCrownSavedPlayer().confirmAbsenceIncludingFallback(player,source.instanceId(),request.source().definition())) return;
+        if (!live(player) || !current(player, source.holderId()) || !reclaimedAndAbsent(player,
+                request.operation().toString(), source, request.source().definition(), source.holderId())) return;
         recovery.confirmReclamation(request).thenAccept(held -> {
             if (!held) plugin.getLogger().warning("Crown reclamation needs review for " + request.operation());
         }).exceptionally(this::reportFailure);
@@ -201,58 +229,62 @@ public final class PaperCrownJoinRecovery implements Listener {
     private void stageRemoval(Player session, CrownEquipmentRecovery.Receipt receipt, NamespacedKey marker) {
         var source = receipt.reservation();
         var helmet = session.getInventory().getHelmet();
-        if (helmet == null || session.isDead() || exchange.markedCrown(session).filter(source::equals).isEmpty()) return;
+        if (helmet == null || session.isDead() || !marks(session, source)) return;
         byte[] bytes = helmet.serializeAsBytes();
         recovery.escrowForHandoff(receipt, bytes).thenAcceptAsync(accepted -> {
-            if (!accepted || !active.getAsBoolean() || session.isDead() || !session.isOnline()
-                    || plugin.getServer().getPlayer(source.holderId()) != session
-                    || exchange.markedCrown(session).filter(source::equals).isEmpty()) return;
-            var current = session.getInventory().getHelmet();
-            if (current == null || !java.util.Arrays.equals(bytes, current.serializeAsBytes())) return;
-            var data = session.getPersistentDataContainer();
-            data.set(marker, org.bukkit.persistence.PersistentDataType.STRING,
-                    source.operationId() + "/" + source.instanceId() + "/" + receipt.definition());
-            session.getInventory().setHelmet(null);
-            session.saveData();
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (active.getAsBoolean() && session.isOnline()
-                        && plugin.getServer().getPlayer(source.holderId()) == session
-                        && new PaperCrownSavedPlayer().agrees(session, source.instanceId(), receipt.definition(), false))
-                    confirmRemoval(session, marker);
-            }, 20L);
+            if (!accepted || !holdsMarkedCrown(session, source) || !helmetIs(session, bytes)) return;
+            releaseForHandoff(session, receipt, marker);
         }, task -> plugin.getServer().getScheduler().runTask(plugin, task)).exceptionally(error -> {
             plugin.getLogger().log(java.util.logging.Level.WARNING, "Crown handoff requires review for " + source.operationId(), error);
             return null;
         });
     }
 
+    private void releaseForHandoff(Player session, CrownEquipmentRecovery.Receipt receipt, NamespacedKey marker) {
+        var source = receipt.reservation();
+        session.getPersistentDataContainer().set(marker, org.bukkit.persistence.PersistentDataType.STRING,
+                source.operationId() + "/" + source.instanceId() + "/" + receipt.definition());
+        session.getInventory().setHelmet(null);
+        session.saveData();
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (active.getAsBoolean() && session.isOnline() && current(session, source.holderId())
+                    && new PaperCrownSavedPlayer().agrees(session, source.instanceId(), receipt.definition(), false))
+                confirmRemoval(session, marker);
+        }, 20L);
+    }
+
     private void confirmRemoval(Player session, NamespacedKey marker) {
-        if (!active.getAsBoolean() || !session.isOnline() || session.isDead()
-                || plugin.getServer().getPlayer(session.getUniqueId()) != session) return;
+        if (!live(session) || !current(session, session.getUniqueId())) return;
         try {
             String[] ids = session.getPersistentDataContainer().get(marker, org.bukkit.persistence.PersistentDataType.STRING).split("/", -1);
             if (ids.length != 3) return;
             UUID operation = UUID.fromString(ids[0]), instance = UUID.fromString(ids[1]), definition = UUID.fromString(ids[2]);
-            var probe = new PaperCrownInventoryProbe(PaperItemCodecThreadGuard.system());
-            if (probe.observe(session, session.getUniqueId(), definition, instance) != PaperCrownInventoryProbe.Observation.MISSING) return;
-            if (!new PaperCrownSavedPlayer().confirmAbsenceIncludingFallback(session,instance,definition)) return;
-            recovery.confirmSourceReleased(session.getUniqueId(), operation, instance, definition).thenAcceptAsync(killer -> {
-                if (!active.getAsBoolean() || killer.isEmpty()) return;
-                if (plugin.getServer().getPlayer(session.getUniqueId()) == session) {
-                    var data = session.getPersistentDataContainer();
-                    String expected = operation + "/" + instance + "/" + definition;
-                    if (expected.equals(data.get(marker, org.bukkit.persistence.PersistentDataType.STRING))) {
-                        data.remove(marker);
-                        data.remove(ESCROW);
-                        session.saveData();
-                    }
-                }
-                var recipient = plugin.getServer().getPlayer(killer.get());
-                if (recipient != null) receive(recipient);
-            }, this::onMain).exceptionally(this::reportFailure);
+            if (!absentEverywhere(session, instance, definition)) return;
+            String expected = operation + "/" + instance + "/" + definition;
+            recovery.confirmSourceReleased(session.getUniqueId(), operation, instance, definition).thenAcceptAsync(
+                    killer -> afterSourceReleased(session, marker, expected, killer), this::onMain).exceptionally(this::reportFailure);
         } catch (IllegalArgumentException | NullPointerException malformed) {
             plugin.getLogger().warning("Malformed Crown release evidence for " + session.getUniqueId());
         }
+    }
+
+    private static boolean absentEverywhere(Player session, UUID instance, UUID definition) {
+        return new PaperCrownInventoryProbe(PaperItemCodecThreadGuard.system()).observe(session, session.getUniqueId(), definition,
+                instance) == PaperCrownInventoryProbe.Observation.MISSING
+                && new PaperCrownSavedPlayer().confirmAbsenceIncludingFallback(session,instance,definition);
+    }
+
+    private void afterSourceReleased(Player session, NamespacedKey marker, String expected, java.util.Optional<UUID> killer) {
+        if (!active.getAsBoolean() || killer.isEmpty()) return;
+        var data = session.getPersistentDataContainer();
+        if (current(session, session.getUniqueId())
+                && expected.equals(data.get(marker, org.bukkit.persistence.PersistentDataType.STRING))) {
+            data.remove(marker);
+            data.remove(ESCROW);
+            session.saveData();
+        }
+        var recipient = plugin.getServer().getPlayer(killer.get());
+        if (recipient != null) receive(recipient);
     }
 
     private boolean canReceive(Player player) {
@@ -265,48 +297,65 @@ public final class PaperCrownJoinRecovery implements Listener {
         if (!canReceive(player)) return;
         recovery.takeReleased(player.getUniqueId()).thenAcceptAsync(result -> {
             if (result.isEmpty()) {
-                recovery.hasUnconfirmedDelivery(player.getUniqueId()).thenAccept(pending -> {
-                    if (pending) plugin.getLogger().warning("Crown delivery requires review for " + player.getUniqueId()
-                            + ": a committed grant has no matching saved destination evidence.");
-                }).exceptionally(this::reportFailure);
+                reportUnconfirmedDelivery(player);
                 return;
             }
-            var delivery = result.get();
-            var request = delivery.destination();
-            if (!canReceive(player) || plugin.getServer().getPlayer(request.holderId()) != player)
-                throw new IllegalStateException("Recipient changed after Crown reservation " + request.operationId());
-            var guard = PaperItemCodecThreadGuard.system();
-            var crown = org.bukkit.inventory.ItemStack.deserializeBytes(delivery.crown());
-            var identity = new PaperItemIdentityCodec(guard).readIdentity(crown);
-            if (crown.getType() != org.bukkit.Material.NETHERITE_HELMET || crown.getAmount() != 1
-                    || !(identity instanceof net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked tracked)
-                    || !tracked.identity().definitionId().value().equals(delivery.definition())
-                    || !tracked.identity().instanceId().value().equals(request.instanceId())
-                    || new PaperCrownInventoryProbe(guard).observe(player, request.holderId(), delivery.definition(), request.instanceId())
-                    != PaperCrownInventoryProbe.Observation.MISSING)
-                throw new IllegalStateException("Conflicting Crown identity on delivery " + request.operationId());
-            var inventory = player.getInventory();
-            var prior = inventory.getHelmet();
-            var data = player.getPersistentDataContainer();
-            var escrow = data.getAdapterContext().newPersistentDataContainer();
-            var text = org.bukkit.persistence.PersistentDataType.STRING;
-            escrow.set(new NamespacedKey(plugin,"operation"),text,request.operationId().toString());
-            escrow.set(new NamespacedKey(plugin,"holder"),text,request.holderId().toString());
-            escrow.set(new NamespacedKey(plugin,"instance"),text,request.instanceId().toString());
-            escrow.set(new NamespacedKey(plugin,"generation"),org.bukkit.persistence.PersistentDataType.LONG,request.generation());
-            // A successor's own helmet is moved intact; there is no sacrificed item.
-            escrow.set(new NamespacedKey(plugin,"consumed"),text,"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-            data.set(ESCROW,org.bukkit.persistence.PersistentDataType.TAG_CONTAINER,escrow);
-            data.set(new NamespacedKey(plugin,"crown_incoming"),text,delivery.definition().toString());
-            if (prior != null && !prior.getType().isAir()) inventory.setItem(inventory.firstEmpty(),prior);
-            inventory.setHelmet(crown);
-            player.saveData();
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (active.getAsBoolean() && player.isOnline()
-                        && plugin.getServer().getPlayer(request.holderId()) == player && saved(player, true))
-                    finalizeIncoming(player, new NamespacedKey(plugin, "crown_incoming"));
-            }, 20L);
+            equipDelivered(player, result.get());
         }, this::onMain).exceptionally(this::reportFailure);
+    }
+
+    private void reportUnconfirmedDelivery(Player player) {
+        recovery.hasUnconfirmedDelivery(player.getUniqueId()).thenAccept(pending -> {
+            if (pending) plugin.getLogger().warning("Crown delivery requires review for " + player.getUniqueId()
+                    + ": a committed grant has no matching saved destination evidence.");
+        }).exceptionally(this::reportFailure);
+    }
+
+    private void equipDelivered(Player player, CrownEquipmentRecovery.Delivery delivery) {
+        var request = delivery.destination();
+        if (!canReceive(player) || !current(player, request.holderId()))
+            throw new IllegalStateException("Recipient changed after Crown reservation " + request.operationId());
+        var crown = org.bukkit.inventory.ItemStack.deserializeBytes(delivery.crown());
+        if (!deliverable(player, crown, request, delivery.definition()))
+            throw new IllegalStateException("Conflicting Crown identity on delivery " + request.operationId());
+        var inventory = player.getInventory();
+        var prior = inventory.getHelmet();
+        var data = player.getPersistentDataContainer();
+        data.set(ESCROW,org.bukkit.persistence.PersistentDataType.TAG_CONTAINER,successorEscrow(data, request));
+        data.set(new NamespacedKey(plugin,"crown_incoming"),org.bukkit.persistence.PersistentDataType.STRING,delivery.definition().toString());
+        if (prior != null && !prior.getType().isAir()) inventory.setItem(inventory.firstEmpty(),prior);
+        inventory.setHelmet(crown);
+        player.saveData();
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> finalizeWhenSaved(player, request), 20L);
+    }
+
+    /** Identity is read before the shape checks, as in the original single-condition form. */
+    private static boolean deliverable(Player player, org.bukkit.inventory.ItemStack crown, ExclusiveCustodyReservation request,
+            UUID definition) {
+        var guard = PaperItemCodecThreadGuard.system();
+        var identity = new PaperItemIdentityCodec(guard).readIdentity(crown);
+        return PaperCrownSlotExchange.singleNetheriteHelmet(crown)
+                && PaperCrownSlotExchange.tracksRequest(identity, request, definition)
+                && new PaperCrownInventoryProbe(guard).observe(player, request.holderId(), definition, request.instanceId())
+                == PaperCrownInventoryProbe.Observation.MISSING;
+    }
+
+    private org.bukkit.persistence.PersistentDataContainer successorEscrow(org.bukkit.persistence.PersistentDataContainer data,
+            ExclusiveCustodyReservation request) {
+        var escrow = data.getAdapterContext().newPersistentDataContainer();
+        var text = org.bukkit.persistence.PersistentDataType.STRING;
+        escrow.set(new NamespacedKey(plugin,"operation"),text,request.operationId().toString());
+        escrow.set(new NamespacedKey(plugin,"holder"),text,request.holderId().toString());
+        escrow.set(new NamespacedKey(plugin,"instance"),text,request.instanceId().toString());
+        escrow.set(new NamespacedKey(plugin,"generation"),org.bukkit.persistence.PersistentDataType.LONG,request.generation());
+        // A successor's own helmet is moved intact; there is no sacrificed item.
+        escrow.set(new NamespacedKey(plugin,"consumed"),text,"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        return escrow;
+    }
+
+    private void finalizeWhenSaved(Player player, ExclusiveCustodyReservation request) {
+        if (active.getAsBoolean() && player.isOnline() && current(player, request.holderId()) && saved(player, true))
+            finalizeIncoming(player, new NamespacedKey(plugin, "crown_incoming"));
     }
 
     private void finalizeIncoming(Player player, NamespacedKey incoming) {
@@ -316,22 +365,25 @@ public final class PaperCrownJoinRecovery implements Listener {
         var read = new PaperItemIdentityCodec(PaperItemCodecThreadGuard.system()).readIdentity(helmet);
         if (!(read instanceof net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked tracked)) return;
         var definition = tracked.identity().definitionId().value();
-        if (!definition.toString().equals(player.getPersistentDataContainer().get(incoming, org.bukkit.persistence.PersistentDataType.STRING))) return;
         var target = request.get();
-        if (new PaperCrownInventoryProbe(PaperItemCodecThreadGuard.system()).observe(
-                player, target.holderId(), definition, target.instanceId())
+        if (!definition.toString().equals(player.getPersistentDataContainer().get(incoming, org.bukkit.persistence.PersistentDataType.STRING))
+                || new PaperCrownInventoryProbe(PaperItemCodecThreadGuard.system()).observe(
+                        player, target.holderId(), definition, target.instanceId())
                 != PaperCrownInventoryProbe.Observation.HEAD_ONLY) return;
-        recovery.commitSuccessor(target,definition).thenAcceptAsync(committed -> {
-            if (!active.getAsBoolean()) return;
-            if (committed) plugin.getServer().broadcast(net.kyori.adventure.text.Component.text(
-                    player.getName() + " now wears the Crown of Sorrow."));
-            recovery.findEquipped(target.holderId()).thenAcceptAsync(receipt -> {
-                if (plugin.getServer().getPlayer(target.holderId()) == player && receipt.isPresent()
-                        && receipt.get().reservation().equals(target) && exchange.markedCrown(player).filter(target::equals).isPresent()) {
-                    player.getPersistentDataContainer().remove(incoming);
-                    player.saveData();
-                }
-            }, this::onMain).exceptionally(this::reportFailure);
+        recovery.commitSuccessor(target,definition).thenAcceptAsync(committed -> announceSuccessor(player, target, incoming, committed),
+                this::onMain).exceptionally(this::reportFailure);
+    }
+
+    private void announceSuccessor(Player player, ExclusiveCustodyReservation target, NamespacedKey incoming, Boolean committed) {
+        if (!active.getAsBoolean()) return;
+        if (committed) plugin.getServer().broadcast(net.kyori.adventure.text.Component.text(
+                player.getName() + " now wears the Crown of Sorrow."));
+        recovery.findEquipped(target.holderId()).thenAcceptAsync(receipt -> {
+            if (current(player, target.holderId()) && receipt.isPresent()
+                    && receipt.get().reservation().equals(target) && marks(player, target)) {
+                player.getPersistentDataContainer().remove(incoming);
+                player.saveData();
+            }
         }, this::onMain).exceptionally(this::reportFailure);
     }
 

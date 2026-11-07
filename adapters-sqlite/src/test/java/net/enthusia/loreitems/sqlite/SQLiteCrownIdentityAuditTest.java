@@ -7,7 +7,9 @@ import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
+import net.enthusia.loreitems.application.CrownEquipmentRecovery;
 import net.enthusia.loreitems.application.MetricsPort;
+import net.enthusia.loreitems.domain.ExclusiveCustodyReservation;
 import net.enthusia.loreitems.application.StorageState;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,38 +42,15 @@ class SQLiteCrownIdentityAuditTest {
                     SQLiteCrownIdentityAudit.Finding.PENDING_MUTATION,
                     SQLiteCrownIdentityAudit.Finding.DESTRUCTIVE_OPERATION,
                     SQLiteCrownIdentityAudit.Finding.LIVE_PHYSICAL_PROOF_REQUIRED)));
-            runtime.execute(c -> {
-                try (var s = c.createStatement()) {
-                    s.executeUpdate("UPDATE destructive_operations SET state='ABORTED',terminal_at=1 WHERE operation_id='destructive'");
-                }
-                return null;
-            }).toCompletableFuture().join();
-            assertTrue(audit.inspect(definition, instance).toCompletableFuture().join()
-                    .contains(SQLiteCrownIdentityAudit.Finding.DESTRUCTIVE_OPERATION));
-            runtime.execute(c -> {
-                try (var s = c.createStatement()) {
-                    s.executeUpdate("UPDATE destructive_targets SET effect_state='UNKNOWN' WHERE operation_id='destructive'");
-                }
-                return null;
-            }).toCompletableFuture().join();
-            assertTrue(audit.inspect(definition, instance).toCompletableFuture().join()
-                    .contains(SQLiteCrownIdentityAudit.Finding.DESTRUCTIVE_OPERATION));
-            runtime.execute(c -> {
-                try (var s = c.createStatement()) {
-                    s.executeUpdate("UPDATE destructive_targets SET state='ABORTED' WHERE operation_id='destructive'");
-                }
-                return null;
-            }).toCompletableFuture().join();
-            assertTrue(audit.inspect(definition, instance).toCompletableFuture().join()
-                    .contains(SQLiteCrownIdentityAudit.Finding.DESTRUCTIVE_OPERATION));
-            runtime.execute(c -> {
-                try (var s = c.createStatement()) {
-                    s.executeUpdate("UPDATE destructive_targets SET effect_state='AMBIGUOUS' WHERE operation_id='destructive'");
-                }
-                return null;
-            }).toCompletableFuture().join();
-            assertTrue(audit.inspect(definition, instance).toCompletableFuture().join()
-                    .contains(SQLiteCrownIdentityAudit.Finding.DESTRUCTIVE_OPERATION));
+            for (String change : java.util.List.of(
+                    "UPDATE destructive_operations SET state='ABORTED',terminal_at=1 WHERE operation_id='destructive'",
+                    "UPDATE destructive_targets SET effect_state='UNKNOWN' WHERE operation_id='destructive'",
+                    "UPDATE destructive_targets SET state='ABORTED' WHERE operation_id='destructive'",
+                    "UPDATE destructive_targets SET effect_state='AMBIGUOUS' WHERE operation_id='destructive'")) {
+                sql(runtime, change);
+                assertTrue(audit.inspect(definition, instance).toCompletableFuture().join()
+                        .contains(SQLiteCrownIdentityAudit.Finding.DESTRUCTIVE_OPERATION), change);
+            }
             var missingWithTwo = audit.inspect(definition, UUID.randomUUID()).toCompletableFuture().join();
             assertTrue(missingWithTwo.contains(SQLiteCrownIdentityAudit.Finding.UNEXPECTED_ACTIVE_INSTANCE));
             assertTrue(missingWithTwo.contains(SQLiteCrownIdentityAudit.Finding.MULTIPLE_ACTIVE_INSTANCES));
@@ -135,146 +114,160 @@ class SQLiteCrownIdentityAuditTest {
         var reopened = start();
         try {
             var store = new SQLiteCrownHelmetEvidenceStore(reopened);
-            assertFalse(store.reserveFirstIssue(request, definition, 1, template, original).toCompletableFuture().join());
-            assertTrue(store.matchesSavedHelmet(request, original).toCompletableFuture().join());
-            assertThrows(CompletionException.class, () -> reopened.execute(c -> {
-                insertInstance(c, definition, UUID.randomUUID());
-                return null;
-            }).toCompletableFuture().join());
-            assertFalse(store.holdInterruptedOnStartup().toCompletableFuture().join());
-            assertTrue(store.confirmLoaded(request, UUID.randomUUID(), original).toCompletableFuture().join().isEmpty());
-            assertTrue(store.confirmLoaded(request, definition, new byte[]{8}).toCompletableFuture().join().isEmpty());
-            assertTrue(store.matchesSavedHelmet(request, original).toCompletableFuture().join());
             var killer = UUID.randomUUID();
-            assertTrue(store.recordPlayerKill(request, killer).toCompletableFuture().join());
-            assertTrue(store.matchesSavedHelmet(request, original).toCompletableFuture().join());
-            var equipped = store.confirmLoaded(request, definition, original).toCompletableFuture().join().orElseThrow();
-            assertEquals(request, equipped.reservation());
-            assertEquals(equipped, store.findEquipped(request.holderId()).toCompletableFuture().join().orElseThrow());
-            assertTrue(store.recordPlayerKill(request, killer).toCompletableFuture().join());
-            assertFalse(store.recordPlayerKill(request, UUID.randomUUID()).toCompletableFuture().join());
-            assertFalse(store.recordPlayerKill(request, request.holderId()).toCompletableFuture().join());
+            var equipped = equipAfterFencedReopen(reopened, store, request, definition, original, killer);
             byte[] crown = {1, 3, 5};
-            assertTrue(store.escrowForHandoff(equipped, crown).toCompletableFuture().join());
-            assertFalse(store.escrowForHandoff(equipped, new byte[]{4}).toCompletableFuture().join());
-            assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
-            assertTrue(store.confirmSourceReleased(killer, request.operationId(), request.instanceId(), definition)
-                    .toCompletableFuture().join().isEmpty());
-            assertEquals(killer, store.confirmSourceReleased(request.holderId(), request.operationId(), request.instanceId(), definition)
-                    .toCompletableFuture().join().orElseThrow());
-            assertTrue(store.takeReleased(UUID.randomUUID()).toCompletableFuture().join().isEmpty());
-            assertFalse(store.hasUnconfirmedDelivery(killer).toCompletableFuture().join());
-            assertEquals(net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.CONFLICT,
-                    store.reserveReclamation(UUID.randomUUID(), request.instanceId(), request.holderId(), 1).toCompletableFuture().join());
-            var transfer = store.takeReleased(killer).toCompletableFuture().join().orElseThrow();
-            assertTrue(store.hasUnconfirmedDelivery(killer).toCompletableFuture().join());
-            var inspection = store.inspectCustody().toCompletableFuture().join().orElseThrow();
-            assertEquals(request.holderId(), inspection.recordedHolder());
-            assertEquals(killer, inspection.transfer().orElseThrow().recipient());
-            assertEquals(transfer.destination().operationId(), inspection.transfer().orElseThrow().deliveryOperation().orElseThrow());
-            assertTrue(inspection.transfer().orElseThrow().sourceReleased());
-            assertFalse(store.hasUnconfirmedDelivery(UUID.randomUUID()).toCompletableFuture().join());
-            assertTrue(java.util.Arrays.equals(crown, transfer.crown()));
-            assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
-            assertFalse(store.commitSuccessor(transfer.destination(), UUID.randomUUID()).toCompletableFuture().join());
-            reopened.execute(c -> {
-                try (var statement = c.createStatement()) {
-                    statement.execute("CREATE TRIGGER reject_successor_audit BEFORE INSERT ON crown_custody_audit "
-                            + "BEGIN SELECT RAISE(ABORT,'injected successor audit failure'); END");
-                }
-                return null;
-            }).toCompletableFuture().join();
-            assertThrows(CompletionException.class,
-                    () -> store.commitSuccessor(transfer.destination(), definition).toCompletableFuture().join());
-            assertEquals(equipped, store.findEquipped(request.holderId()).toCompletableFuture().join().orElseThrow());
-            assertTrue(store.findEquipped(killer).toCompletableFuture().join().isEmpty());
-            assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
-            reopened.execute(c -> {
-                try (var statement = c.createStatement()) {
-                    statement.execute("DROP TRIGGER reject_successor_audit");
-                }
-                return null;
-            }).toCompletableFuture().join();
-            assertTrue(store.commitSuccessor(transfer.destination(), definition).toCompletableFuture().join());
-            assertFalse(store.commitSuccessor(transfer.destination(), definition).toCompletableFuture().join());
-            assertFalse(store.hasUnconfirmedDelivery(killer).toCompletableFuture().join());
-            var completedInspection = store.inspectCustody().toCompletableFuture().join().orElseThrow();
-            assertEquals(killer, completedInspection.recordedHolder());
-            assertEquals(2, completedInspection.generation());
-            assertTrue(completedInspection.transfer().isEmpty());
-            assertEquals(transfer.destination(), store.findEquipped(killer).toCompletableFuture().join().orElseThrow().reservation());
-            assertTrue(store.findEquipped(request.holderId()).toCompletableFuture().join().isEmpty());
+            var transfer = releaseToKiller(store, request, definition, equipped, killer, crown);
+            commitSuccessorAfterInjectedFailure(reopened, store, request, definition, equipped, transfer, killer);
             UUID reclamation = UUID.randomUUID();
-            var reserved = net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.RESERVED;
-            var conflict = net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.CONFLICT;
-            assertEquals(conflict, store.reserveReclamation(reclamation, request.instanceId(), request.holderId(), 1).toCompletableFuture().join());
-            assertEquals(reserved, store.reserveReclamation(reclamation, request.instanceId(), killer, 2).toCompletableFuture().join());
-            assertEquals(net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.ALREADY_RESERVED,
-                    store.reserveReclamation(reclamation, request.instanceId(), killer, 2).toCompletableFuture().join());
-            assertEquals(conflict, store.reserveReclamation(reclamation, request.instanceId(), killer, 3).toCompletableFuture().join());
-            assertEquals(conflict, store.reserveReclamation(UUID.randomUUID(), request.instanceId(), killer, 2).toCompletableFuture().join());
-            assertFalse(store.recordPlayerKill(transfer.destination(), UUID.randomUUID()).toCompletableFuture().join());
-            assertEquals(reclamation, store.inspectCustody().toCompletableFuture().join().orElseThrow().reclamationOperation().orElseThrow());
-            var reclaim = store.findReclamation(killer).toCompletableFuture().join().orElseThrow();
-            assertFalse(store.confirmReclamation(reclaim).toCompletableFuture().join());
-            UUID recoveryMatch=UUID.randomUUID();
-            assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
-            assertTrue(store.stageReclamation(reclaim, crown).toCompletableFuture().join());
-            assertTrue(store.stageReclamation(reclaim, crown).toCompletableFuture().join());
-            assertFalse(store.stageReclamation(reclaim, new byte[]{9}).toCompletableFuture().join());
-            reopened.execute(c -> {
-                try (var statement = c.createStatement()) {
-                    statement.execute("CREATE TRIGGER reject_reclaim_confirmation BEFORE UPDATE ON crown_reclamation_escrow "
-                            + "BEGIN SELECT RAISE(ABORT,'injected reclaim confirmation failure'); END");
-                }
-                return null;
-            }).toCompletableFuture().join();
-            assertThrows(CompletionException.class, () -> store.confirmReclamation(reclaim).toCompletableFuture().join());
-            assertFalse(store.findReclamation(killer).toCompletableFuture().join().orElseThrow().held());
-            reopened.execute(c -> {
-                try (var statement = c.createStatement()) { statement.execute("DROP TRIGGER reject_reclaim_confirmation"); }
-                return null;
-            }).toCompletableFuture().join();
-            assertTrue(store.confirmReclamation(reclaim).toCompletableFuture().join());
-            assertTrue(store.confirmReclamation(reclaim).toCompletableFuture().join());
-            assertTrue(store.findReclamation(killer).toCompletableFuture().join().orElseThrow().held());
-            assertEquals("HELD",store.inspectCustody().toCompletableFuture().join().orElseThrow().reclamationState());
-            assertFalse(store.stageReclamation(reclaim, crown).toCompletableFuture().join());
-            reopened.execute(c -> {
-                try (var statement = c.createStatement()) { statement.executeUpdate("UPDATE crown_custody SET generation=3"); }
-                return null;
-            }).toCompletableFuture().join();
-            assertEquals(conflict, store.reserveReclamation(reclamation, request.instanceId(), killer, 2).toCompletableFuture().join());
-            reopened.execute(c -> {
-                try (var statement = c.createStatement()) { statement.executeUpdate("UPDATE crown_custody SET generation=2"); }
-                return null;
-            }).toCompletableFuture().join();
-            assertEquals(transfer.destination(), store.findEquipped(killer).toCompletableFuture().join().orElseThrow().reservation());
-            assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,1,recoveryMatch,request.holderId()).toCompletableFuture().join());
-            reopened.execute(c -> {try(var statement=c.createStatement()) {
-                statement.execute("CREATE TRIGGER reject_recovery_grant BEFORE INSERT ON crown_recovery_delivery BEGIN SELECT RAISE(ABORT,'injected grant failure'); END");
-            }return null;}).toCompletableFuture().join();
-            assertThrows(CompletionException.class,()->store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
-            assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
-            reopened.execute(c -> {try(var statement=c.createStatement()) {statement.execute("DROP TRIGGER reject_recovery_grant");}return null;}).toCompletableFuture().join();
-            assertEquals(reserved,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
-            assertEquals(net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.ALREADY_RESERVED,
-                    store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
-            assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,UUID.randomUUID(),request.holderId()).toCompletableFuture().join());
-            assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,UUID.randomUUID()).toCompletableFuture().join());
-            assertTrue(store.releasedReclamation(killer,reclamation).toCompletableFuture().join().isPresent());
-            var recovered=store.takeReleased(request.holderId()).toCompletableFuture().join().orElseThrow();
-            assertArrayEquals(crown,recovered.crown());
-            assertEquals(3,recovered.destination().generation());
-            assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
-            assertTrue(store.hasUnconfirmedDelivery(request.holderId()).toCompletableFuture().join());
-            assertFalse(store.commitSuccessor(recovered.destination(),UUID.randomUUID()).toCompletableFuture().join());
-            assertTrue(store.commitSuccessor(recovered.destination(),recovered.definition()).toCompletableFuture().join());
-            assertFalse(store.hasUnconfirmedDelivery(request.holderId()).toCompletableFuture().join());
-            assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
-            assertEquals(recovered.destination(),store.findEquipped(request.holderId()).toCompletableFuture().join().orElseThrow().reservation());
+            UUID recoveryMatch = UUID.randomUUID();
+            reclaimFromInactiveSuccessor(reopened, store, request, killer, reclamation, recoveryMatch, crown, transfer);
+            redeliverToRecoveryWinner(reopened, store, request, killer, reclamation, recoveryMatch, crown);
         } finally { reopened.close(Duration.ofSeconds(5)); }
     }
+
+    private static CrownEquipmentRecovery.Receipt equipAfterFencedReopen(SQLiteStorageRuntime reopened,
+            SQLiteCrownHelmetEvidenceStore store, ExclusiveCustodyReservation request, UUID definition, byte[] original, UUID killer) {
+        var template = new net.enthusia.loreitems.application.EncodedItemTemplate(1, new byte[]{1});
+        assertFalse(store.reserveFirstIssue(request, definition, 1, template, original).toCompletableFuture().join());
+        assertTrue(store.matchesSavedHelmet(request, original).toCompletableFuture().join());
+        assertThrows(CompletionException.class, () -> reopened.execute(c -> {
+            insertInstance(c, definition, UUID.randomUUID());
+            return null;
+        }).toCompletableFuture().join());
+        assertFalse(store.holdInterruptedOnStartup().toCompletableFuture().join());
+        assertTrue(store.confirmLoaded(request, UUID.randomUUID(), original).toCompletableFuture().join().isEmpty());
+        assertTrue(store.confirmLoaded(request, definition, new byte[]{8}).toCompletableFuture().join().isEmpty());
+        assertTrue(store.matchesSavedHelmet(request, original).toCompletableFuture().join());
+        assertTrue(store.recordPlayerKill(request, killer).toCompletableFuture().join());
+        assertTrue(store.matchesSavedHelmet(request, original).toCompletableFuture().join());
+        var equipped = store.confirmLoaded(request, definition, original).toCompletableFuture().join().orElseThrow();
+        assertEquals(request, equipped.reservation());
+        assertEquals(equipped, store.findEquipped(request.holderId()).toCompletableFuture().join().orElseThrow());
+        assertTrue(store.recordPlayerKill(request, killer).toCompletableFuture().join());
+        assertFalse(store.recordPlayerKill(request, UUID.randomUUID()).toCompletableFuture().join());
+        assertFalse(store.recordPlayerKill(request, request.holderId()).toCompletableFuture().join());
+        return equipped;
+    }
+
+    private static CrownEquipmentRecovery.Delivery releaseToKiller(SQLiteCrownHelmetEvidenceStore store,
+            ExclusiveCustodyReservation request, UUID definition, CrownEquipmentRecovery.Receipt equipped, UUID killer, byte[] crown) {
+        assertTrue(store.escrowForHandoff(equipped, crown).toCompletableFuture().join());
+        assertFalse(store.escrowForHandoff(equipped, new byte[]{4}).toCompletableFuture().join());
+        assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
+        assertTrue(store.confirmSourceReleased(killer, request.operationId(), request.instanceId(), definition)
+                .toCompletableFuture().join().isEmpty());
+        assertEquals(killer, store.confirmSourceReleased(request.holderId(), request.operationId(), request.instanceId(), definition)
+                .toCompletableFuture().join().orElseThrow());
+        assertTrue(store.takeReleased(UUID.randomUUID()).toCompletableFuture().join().isEmpty());
+        assertFalse(store.hasUnconfirmedDelivery(killer).toCompletableFuture().join());
+        assertEquals(net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.CONFLICT,
+                store.reserveReclamation(UUID.randomUUID(), request.instanceId(), request.holderId(), 1).toCompletableFuture().join());
+        var transfer = store.takeReleased(killer).toCompletableFuture().join().orElseThrow();
+        assertTrue(store.hasUnconfirmedDelivery(killer).toCompletableFuture().join());
+        var inspection = store.inspectCustody().toCompletableFuture().join().orElseThrow();
+        assertEquals(request.holderId(), inspection.recordedHolder());
+        assertEquals(killer, inspection.transfer().orElseThrow().recipient());
+        assertEquals(transfer.destination().operationId(), inspection.transfer().orElseThrow().deliveryOperation().orElseThrow());
+        assertTrue(inspection.transfer().orElseThrow().sourceReleased());
+        assertFalse(store.hasUnconfirmedDelivery(UUID.randomUUID()).toCompletableFuture().join());
+        assertTrue(java.util.Arrays.equals(crown, transfer.crown()));
+        assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
+        return transfer;
+    }
+
+    private static void commitSuccessorAfterInjectedFailure(SQLiteStorageRuntime reopened, SQLiteCrownHelmetEvidenceStore store,
+            ExclusiveCustodyReservation request, UUID definition, CrownEquipmentRecovery.Receipt equipped,
+            CrownEquipmentRecovery.Delivery transfer, UUID killer) {
+        assertFalse(store.commitSuccessor(transfer.destination(), UUID.randomUUID()).toCompletableFuture().join());
+        sql(reopened, "CREATE TRIGGER reject_successor_audit BEFORE INSERT ON crown_custody_audit "
+                + "BEGIN SELECT RAISE(ABORT,'injected successor audit failure'); END");
+        assertThrows(CompletionException.class,
+                () -> store.commitSuccessor(transfer.destination(), definition).toCompletableFuture().join());
+        assertEquals(equipped, store.findEquipped(request.holderId()).toCompletableFuture().join().orElseThrow());
+        assertTrue(store.findEquipped(killer).toCompletableFuture().join().isEmpty());
+        assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
+        sql(reopened, "DROP TRIGGER reject_successor_audit");
+        assertTrue(store.commitSuccessor(transfer.destination(), definition).toCompletableFuture().join());
+        assertFalse(store.commitSuccessor(transfer.destination(), definition).toCompletableFuture().join());
+        assertFalse(store.hasUnconfirmedDelivery(killer).toCompletableFuture().join());
+        var completedInspection = store.inspectCustody().toCompletableFuture().join().orElseThrow();
+        assertEquals(killer, completedInspection.recordedHolder());
+        assertEquals(2, completedInspection.generation());
+        assertTrue(completedInspection.transfer().isEmpty());
+        assertEquals(transfer.destination(), store.findEquipped(killer).toCompletableFuture().join().orElseThrow().reservation());
+        assertTrue(store.findEquipped(request.holderId()).toCompletableFuture().join().isEmpty());
+    }
+
+    private static void reclaimFromInactiveSuccessor(SQLiteStorageRuntime reopened, SQLiteCrownHelmetEvidenceStore store,
+            ExclusiveCustodyReservation request, UUID killer, UUID reclamation, UUID recoveryMatch, byte[] crown,
+            CrownEquipmentRecovery.Delivery transfer) {
+        var reserved = CrownEquipmentRecovery.ReclamationReservation.RESERVED;
+        var conflict = CrownEquipmentRecovery.ReclamationReservation.CONFLICT;
+        assertEquals(conflict, store.reserveReclamation(reclamation, request.instanceId(), request.holderId(), 1).toCompletableFuture().join());
+        assertEquals(reserved, store.reserveReclamation(reclamation, request.instanceId(), killer, 2).toCompletableFuture().join());
+        assertEquals(net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.ALREADY_RESERVED,
+                store.reserveReclamation(reclamation, request.instanceId(), killer, 2).toCompletableFuture().join());
+        assertEquals(conflict, store.reserveReclamation(reclamation, request.instanceId(), killer, 3).toCompletableFuture().join());
+        assertEquals(conflict, store.reserveReclamation(UUID.randomUUID(), request.instanceId(), killer, 2).toCompletableFuture().join());
+        assertFalse(store.recordPlayerKill(transfer.destination(), UUID.randomUUID()).toCompletableFuture().join());
+        assertEquals(reclamation, store.inspectCustody().toCompletableFuture().join().orElseThrow().reclamationOperation().orElseThrow());
+        var reclaim = store.findReclamation(killer).toCompletableFuture().join().orElseThrow();
+        assertFalse(store.confirmReclamation(reclaim).toCompletableFuture().join());
+        assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
+        assertTrue(store.stageReclamation(reclaim, crown).toCompletableFuture().join());
+        assertTrue(store.stageReclamation(reclaim, crown).toCompletableFuture().join());
+        assertFalse(store.stageReclamation(reclaim, new byte[]{9}).toCompletableFuture().join());
+        sql(reopened, "CREATE TRIGGER reject_reclaim_confirmation BEFORE UPDATE ON crown_reclamation_escrow "
+                + "BEGIN SELECT RAISE(ABORT,'injected reclaim confirmation failure'); END");
+        assertThrows(CompletionException.class, () -> store.confirmReclamation(reclaim).toCompletableFuture().join());
+        assertFalse(store.findReclamation(killer).toCompletableFuture().join().orElseThrow().held());
+        sql(reopened, "DROP TRIGGER reject_reclaim_confirmation");
+        assertTrue(store.confirmReclamation(reclaim).toCompletableFuture().join());
+        assertTrue(store.confirmReclamation(reclaim).toCompletableFuture().join());
+        assertTrue(store.findReclamation(killer).toCompletableFuture().join().orElseThrow().held());
+        assertEquals("HELD",store.inspectCustody().toCompletableFuture().join().orElseThrow().reclamationState());
+        assertFalse(store.stageReclamation(reclaim, crown).toCompletableFuture().join());
+        sql(reopened, "UPDATE crown_custody SET generation=3");
+        assertEquals(conflict, store.reserveReclamation(reclamation, request.instanceId(), killer, 2).toCompletableFuture().join());
+        sql(reopened, "UPDATE crown_custody SET generation=2");
+        assertEquals(transfer.destination(), store.findEquipped(killer).toCompletableFuture().join().orElseThrow().reservation());
+    }
+
+    private static void redeliverToRecoveryWinner(SQLiteStorageRuntime reopened, SQLiteCrownHelmetEvidenceStore store,
+            ExclusiveCustodyReservation request, UUID killer, UUID reclamation, UUID recoveryMatch, byte[] crown) {
+        var reserved = CrownEquipmentRecovery.ReclamationReservation.RESERVED;
+        var conflict = CrownEquipmentRecovery.ReclamationReservation.CONFLICT;
+        assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,1,recoveryMatch,request.holderId()).toCompletableFuture().join());
+        sql(reopened, "CREATE TRIGGER reject_recovery_grant BEFORE INSERT ON crown_recovery_delivery BEGIN SELECT RAISE(ABORT,'injected grant failure'); END");
+        assertThrows(CompletionException.class,()->store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
+        assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
+        sql(reopened, "DROP TRIGGER reject_recovery_grant");
+        assertEquals(reserved,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
+        assertEquals(net.enthusia.loreitems.application.CrownEquipmentRecovery.ReclamationReservation.ALREADY_RESERVED,
+                store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,request.holderId()).toCompletableFuture().join());
+        assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,UUID.randomUUID(),request.holderId()).toCompletableFuture().join());
+        assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,UUID.randomUUID()).toCompletableFuture().join());
+        assertTrue(store.releasedReclamation(killer,reclamation).toCompletableFuture().join().isPresent());
+        var recovered=store.takeReleased(request.holderId()).toCompletableFuture().join().orElseThrow();
+        assertArrayEquals(crown,recovered.crown());
+        assertEquals(3,recovered.destination().generation());
+        assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
+        assertTrue(store.hasUnconfirmedDelivery(request.holderId()).toCompletableFuture().join());
+        assertFalse(store.commitSuccessor(recovered.destination(),UUID.randomUUID()).toCompletableFuture().join());
+        assertTrue(store.commitSuccessor(recovered.destination(),recovered.definition()).toCompletableFuture().join());
+        assertFalse(store.hasUnconfirmedDelivery(request.holderId()).toCompletableFuture().join());
+        assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
+        assertEquals(recovered.destination(),store.findEquipped(request.holderId()).toCompletableFuture().join().orElseThrow().reservation());
+    }
+
+    private static void sql(SQLiteStorageRuntime runtime, String statement) {
+        runtime.execute(c -> {
+            try (var s = c.createStatement()) { s.execute(statement); }
+            return null;
+        }).toCompletableFuture().join();
+    }
+
     private SQLiteStorageRuntime start() {
         var metrics = MetricsPort.noOp();
         var runtime = new SQLiteStorageRuntime(new SQLiteConnectionFactory(temp.resolve("identity-audit.db"), 5000),
