@@ -178,6 +178,30 @@ final class SQLiteCrownReclamations {
         }
     }
 
+    /** Stages the removed Crown's bytes for a not-yet-held reclamation; commits only after an exact readback. */
+    static boolean stage(Connection connection, Reclamation request, byte[] payload) throws SQLException {
+        lockCustody(connection);
+        var current = read(connection,request.source().reservation().holderId());
+        if (current.isEmpty() || current.get().held() || !current.get().equals(request)) return false;
+        String digest = SQLiteCustodyEvidence.fingerprint(payload);
+        try (var insert = connection.prepareStatement("INSERT OR IGNORE INTO crown_reclamation_escrow VALUES(?,?,?,?,'STAGED')")) {
+            insert.setString(1,request.operation().toString()); insert.setString(2,request.source().definition().toString());
+            insert.setBytes(3,payload); insert.setString(4,digest); insert.executeUpdate();
+        }
+        if (!stagedMatches(connection, request.operation(), payload, digest)) return false;
+        connection.commit();
+        return true;
+    }
+
+    private static boolean stagedMatches(Connection connection, UUID operation, byte[] payload, String digest) throws SQLException {
+        try (var verify = connection.prepareStatement("SELECT payload,payload_sha256 FROM crown_reclamation_escrow WHERE recovery_operation=? AND state='STAGED'")) {
+            verify.setString(1,operation.toString());
+            try (var row = verify.executeQuery()) {
+                return row.next() && java.util.Arrays.equals(payload,row.getBytes(1)) && digest.equals(row.getString(2));
+            }
+        }
+    }
+
     static Optional<Reclamation> read(Connection connection, UUID holder) throws SQLException {
         try (var query = connection.prepareStatement("""
                 SELECT r.recovery_operation,c.operation_id,c.instance_id,c.generation,i.definition_id,

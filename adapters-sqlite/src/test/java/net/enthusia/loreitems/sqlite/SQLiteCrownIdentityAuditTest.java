@@ -63,8 +63,8 @@ class SQLiteCrownIdentityAuditTest {
         var definition = UUID.randomUUID();
         var instance = UUID.randomUUID();
         var holder = UUID.randomUUID();
-        var request = new net.enthusia.loreitems.domain.ExclusiveCustodyReservation(UUID.randomUUID(), instance, holder,
-                1, net.enthusia.loreitems.domain.ExclusiveCustodyReservation.State.RESERVED);
+        var request = new ExclusiveCustodyReservation(UUID.randomUUID(), instance, holder,
+                1, ExclusiveCustodyReservation.State.RESERVED);
         var store = new SQLiteCrownHelmetEvidenceStore(runtime);
         try {
             assertFalse(store.admit(request, definition, true, new byte[0]).toCompletableFuture().join());
@@ -92,8 +92,8 @@ class SQLiteCrownIdentityAuditTest {
     }
     @Test void firstIssueCommitsOnlyOnceAndStillFencesOtherWritersAfterReopen() {
         var definition = UUID.randomUUID();
-        var request = new net.enthusia.loreitems.domain.ExclusiveCustodyReservation(UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), 1, net.enthusia.loreitems.domain.ExclusiveCustodyReservation.State.RESERVED);
+        var request = new ExclusiveCustodyReservation(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), 1, ExclusiveCustodyReservation.State.RESERVED);
         var template = new net.enthusia.loreitems.application.EncodedItemTemplate(1, new byte[]{1});
         byte[] original = { 3, 7 };
         var runtime = start();

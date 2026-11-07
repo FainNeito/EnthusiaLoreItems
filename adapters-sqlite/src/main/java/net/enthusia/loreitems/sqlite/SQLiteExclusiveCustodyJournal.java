@@ -146,36 +146,44 @@ final class SQLiteExclusiveCustodyJournal {
                 requireNoOrphanEvidence(connection);
                 return RecoveryResult.NO_RESERVATION;
             }
-            ExclusiveCustodyReservation request;
-            long generation = rows.getLong(4);
-            if (rows.wasNull()) throw new SQLException("Missing custody generation");
-            try {
-                request = new ExclusiveCustodyReservation(UUID.fromString(rows.getString(1)), UUID.fromString(rows.getString(2)),
-                        UUID.fromString(rows.getString(3)), generation, ExclusiveCustodyReservation.State.RESERVED);
-            } catch (IllegalArgumentException | NullPointerException malformed) {
-                throw new SQLException("Invalid custody identity", malformed);
-            }
-            String state = rows.getString(5);
-            requireAudit(connection, request, "RESERVED");
-            if ("EQUIPPED".equals(state)) {
-                equippedDigest(connection, request).orElseThrow(() -> new SQLException("Missing equipped receipt"));
-                return RecoveryResult.EQUIPPED;
-            }
-            verifyHelmetEvidenceIfPresent(connection, request);
-            if ("REVIEW_REQUIRED".equals(state)) {
-                requireAudit(connection, request, "REVIEW_REQUIRED");
-                return RecoveryResult.ALREADY_IN_REVIEW;
-            }
-            if ("RESERVED".equals(state) && firstIssue(connection, request)) {
-                requireAudit(connection, request, "HELMET_EVIDENCE");
-                return RecoveryResult.AWAITING_FIRST_JOIN;
-            }
-            if (!"RESERVED".equals(state) || !holdForReview(connection, request)) {
-                throw new SQLException("Custody state changed or is invalid");
-            }
-            appendAudit(connection, request, "REVIEW_REQUIRED");
-            return RecoveryResult.REVIEW_REQUIRED;
+            ExclusiveCustodyReservation request = singletonReservation(rows);
+            return resolveInterrupted(connection, request, rows.getString(5));
         }
+    }
+
+    /** Reads columns 1-4 in the original order so {@code wasNull} refers to the generation. */
+    private static ExclusiveCustodyReservation singletonReservation(ResultSet rows) throws SQLException {
+        long generation = rows.getLong(4);
+        if (rows.wasNull()) throw new SQLException("Missing custody generation");
+        try {
+            return new ExclusiveCustodyReservation(UUID.fromString(rows.getString(1)), UUID.fromString(rows.getString(2)),
+                    UUID.fromString(rows.getString(3)), generation, ExclusiveCustodyReservation.State.RESERVED);
+        } catch (IllegalArgumentException | NullPointerException malformed) {
+            throw new SQLException("Invalid custody identity", malformed);
+        }
+    }
+
+    private RecoveryResult resolveInterrupted(Connection connection, ExclusiveCustodyReservation request, String state)
+            throws SQLException {
+        requireAudit(connection, request, "RESERVED");
+        if ("EQUIPPED".equals(state)) {
+            equippedDigest(connection, request).orElseThrow(() -> new SQLException("Missing equipped receipt"));
+            return RecoveryResult.EQUIPPED;
+        }
+        verifyHelmetEvidenceIfPresent(connection, request);
+        if ("REVIEW_REQUIRED".equals(state)) {
+            requireAudit(connection, request, "REVIEW_REQUIRED");
+            return RecoveryResult.ALREADY_IN_REVIEW;
+        }
+        if ("RESERVED".equals(state) && firstIssue(connection, request)) {
+            requireAudit(connection, request, "HELMET_EVIDENCE");
+            return RecoveryResult.AWAITING_FIRST_JOIN;
+        }
+        if (!"RESERVED".equals(state) || !holdForReview(connection, request)) {
+            throw new SQLException("Custody state changed or is invalid");
+        }
+        appendAudit(connection, request, "REVIEW_REQUIRED");
+        return RecoveryResult.REVIEW_REQUIRED;
     }
 
     /** Called only for the first award. A retry never grants permission to materialize another item. */
