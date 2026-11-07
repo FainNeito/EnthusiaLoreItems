@@ -466,7 +466,7 @@ sleep 6
 python3 - "$DB" <<'PY' | tee -a "$EVIDENCE/case-results.txt"
 import sqlite3,sys
 with sqlite3.connect(sys.argv[1]) as c:
-    assert [row[0] for row in c.execute('select version from schema_history order by version')]==list(range(1,12))
+    assert [row[0] for row in c.execute('select version from schema_history order by version')]==list(range(1,19))
     assert c.execute('pragma integrity_check').fetchone()[0]=='ok'
     assert c.execute('pragma foreign_key_check').fetchall()==[]
     assert c.execute('select count(*) from instance_current_state').fetchone()[0]>0
