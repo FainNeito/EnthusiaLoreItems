@@ -16,7 +16,7 @@ import org.junit.jupiter.api.io.TempDir;
 class MigrationUpgradeMatrixTest {
     private static final int RECIPIENT_STATE_MIGRATION_VERSION = 6;
     private static final int REVISION_SNAPSHOT_MIGRATION_VERSION = 7;
-    private static final int LATEST_VERSION = 11;
+    private static final int LATEST_VERSION = 18;
     private static final String SQLITE_INDEX_TYPE = "index";
     private static final String SQL_VALUE_SEPARATOR = "', '";
     private static final String ACTIVE_DEFINITION = "10000000-0000-0000-0000-000000000001";
@@ -29,6 +29,20 @@ class MigrationUpgradeMatrixTest {
     @TempDir
     Path temporaryDirectory;
 
+    @Test
+    void crownMigrationRefusesExistingUnversionedCustodyAndRollsBackPartialTables() throws SQLException {
+        var factory = new SQLiteConnectionFactory(temporaryDirectory.resolve("v12-collision.db"), 5000);
+        var runner = new MigrationRunner();
+        try (var connection = factory.open()) {
+            runner.migrateThrough(connection, 11);
+            execute(connection, "CREATE TABLE crown_custody_audit (legacy_value TEXT)");
+            execute(connection, "INSERT INTO crown_custody_audit VALUES ('preserved')");
+            assertThrows(SQLException.class, () -> runner.migrate(connection));
+            assertEquals(11, scalarInt(connection, "SELECT MAX(version) FROM schema_history"));
+            assertFalse(schemaObjectExists(connection, "table", "crown_custody"));
+            assertEquals("preserved", scalarText(connection, "SELECT legacy_value FROM crown_custody_audit"));
+        }
+    }
     @Test
     void everyCommittedSchemaVersionUpgradesWithDurableStateAndIntegrityPreserved()
             throws SQLException {

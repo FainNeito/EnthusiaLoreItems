@@ -11,3 +11,11 @@ mutation-budget-per-tick: 16
 
 # This policy is read from the live atomic snapshot and may be hot reloaded.
 shared-containers-allowed: true
+
+crown-first-award-enabled: false
+crown-first-award-definition-id: ""
+crown-first-award-revision: 0
+
+# Requires the verified Paper 26.2 offline save layout; activate only after TEST acceptance.
+crown-reclamation-offline-enabled: false
+crown-recovery-events-enabled: false
