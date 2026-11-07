@@ -25,39 +25,52 @@ final class PaperCrownOfflineSave {
         var saved = decode(before);
         verifyOwner(saved,source.holderId());
         var markers = saved.getCompound("BukkitValues");
-        var escrow = markers.getCompound(PREFIX+"crown_exchange");
-        if (!source.operationId().toString().equals(escrow.getString(PREFIX+"operation"))
-                || !source.instanceId().toString().equals(escrow.getString(PREFIX+"instance"))
-                || !source.holderId().toString().equals(escrow.getString(PREFIX+"holder"))
-                || source.generation()!=escrow.getLong(PREFIX+"generation",-1)
-                || !request.source().originalDigest().equals(escrow.getString(PREFIX+"consumed"))
-                || escrow.contains(PREFIX+"original")
+        if (!escrowMatches(markers.getCompound(PREFIX+"crown_exchange"), request)
                 || markers.contains(PREFIX+"crown_incoming") || markers.contains(PREFIX+"crown_released"))
             throw new IOException("Offline custody marker mismatch");
-        int count = PaperCrownSavedPlayer.count(saved,source.instanceId(),request.source().definition(),0);
-        boolean removed = request.operation().toString().equals(markers.getString(PREFIX+"crown_reclaimed"));
-        byte[] crown = null;
-        if (count == 1 && !removed && !request.held()) {
-            var head = saved.getCompound("equipment").getCompound("head");
-            if (!head.getString("id").equals("minecraft:netherite_helmet") || head.getInt("count")!=1
-                    || PaperCrownSavedPlayer.count(head,source.instanceId(),request.source().definition(),0)!=1)
-                throw new IOException("Offline Crown is not uniquely equipped");
-            crown = encode(CompoundBinaryTag.builder().put(head).putInt("DataVersion",saved.getInt("DataVersion")).build());
-        } else if (count != 0 || !removed) {
-            throw new IOException("Offline Crown location is uncertain");
-        }
-        if (previous != null) {
-            var prior = decode(previous);
-            verifyOwner(prior,source.holderId());
-            if (PaperCrownSavedPlayer.count(prior,source.instanceId(),request.source().definition(),0)>1)
-                throw new IOException("Duplicate Crown in backup player save");
-        }
+        byte[] crown = equippedCrown(saved, markers, request);
+        if (previous != null) verifyBackup(decode(previous), request);
         var equipment = saved.getCompound("equipment");
         // A resumed removal must preserve a subsequently equipped unrelated helmet.
         if (crown != null) equipment=equipment.remove("head");
         var changed = saved.put("equipment",equipment).put("BukkitValues",
                 markers.putString(PREFIX+"crown_reclaimed",request.operation().toString()));
         return new Prepared(primary,before,backup,previous,encode(changed),crown,request);
+    }
+
+    /** The saved escrow names this exact committed exchange and its sacrificed helmet is already consumed. */
+    private static boolean escrowMatches(CompoundBinaryTag escrow, CrownEquipmentRecovery.Reclamation request) {
+        var source = request.source().reservation();
+        return source.operationId().toString().equals(escrow.getString(PREFIX+"operation"))
+                && source.instanceId().toString().equals(escrow.getString(PREFIX+"instance"))
+                && source.holderId().toString().equals(escrow.getString(PREFIX+"holder"))
+                && source.generation()==escrow.getLong(PREFIX+"generation",-1)
+                && request.source().originalDigest().equals(escrow.getString(PREFIX+"consumed"))
+                && !escrow.contains(PREFIX+"original");
+    }
+
+    /** The encoded equipped Crown to remove, or null when an earlier attempt already removed it from this save. */
+    private static byte[] equippedCrown(CompoundBinaryTag saved, CompoundBinaryTag markers, CrownEquipmentRecovery.Reclamation request)
+            throws IOException {
+        var source = request.source().reservation();
+        int count = PaperCrownSavedPlayer.count(saved,source.instanceId(),request.source().definition(),0);
+        boolean removed = request.operation().toString().equals(markers.getString(PREFIX+"crown_reclaimed"));
+        if (count == 1 && !removed && !request.held()) {
+            var head = saved.getCompound("equipment").getCompound("head");
+            if (!head.getString("id").equals("minecraft:netherite_helmet") || head.getInt("count")!=1
+                    || PaperCrownSavedPlayer.count(head,source.instanceId(),request.source().definition(),0)!=1)
+                throw new IOException("Offline Crown is not uniquely equipped");
+            return encode(CompoundBinaryTag.builder().put(head).putInt("DataVersion",saved.getInt("DataVersion")).build());
+        }
+        if (count != 0 || !removed) throw new IOException("Offline Crown location is uncertain");
+        return null;
+    }
+
+    private static void verifyBackup(CompoundBinaryTag prior, CrownEquipmentRecovery.Reclamation request) throws IOException {
+        var source = request.source().reservation();
+        verifyOwner(prior,source.holderId());
+        if (PaperCrownSavedPlayer.count(prior,source.instanceId(),request.source().definition(),0)>1)
+            throw new IOException("Duplicate Crown in backup player save");
     }
 
     static void apply(Prepared prepared, Path evidence) throws IOException {

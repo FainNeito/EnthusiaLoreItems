@@ -81,26 +81,8 @@ public final class SQLiteCrownHelmetEvidenceStore implements CrownHelmetEvidence
         if (payload.length == 0 || payload.length > 1048576) throw new IllegalArgumentException("Invalid Crown payload size");
         return storage.execute(connection -> {
             connection.setAutoCommit(false);
-            try {
-                try (var lock = connection.createStatement()) {
-                    lock.executeUpdate("UPDATE crown_custody SET generation=generation WHERE singleton=1");
-                }
-                var current = SQLiteCrownReclamations.read(connection,request.source().reservation().holderId());
-                if (current.isEmpty() || current.get().held() || !current.get().equals(request)) return false;
-                String digest = SQLiteCustodyEvidence.fingerprint(payload);
-                try (var insert = connection.prepareStatement("INSERT OR IGNORE INTO crown_reclamation_escrow VALUES(?,?,?,?,'STAGED')")) {
-                    insert.setString(1,request.operation().toString()); insert.setString(2,request.source().definition().toString());
-                    insert.setBytes(3,payload); insert.setString(4,digest); insert.executeUpdate();
-                }
-                try (var verify = connection.prepareStatement("SELECT payload,payload_sha256 FROM crown_reclamation_escrow WHERE recovery_operation=? AND state='STAGED'")) {
-                    verify.setString(1,request.operation().toString());
-                    try (var row = verify.executeQuery()) {
-                        if (!row.next() || !java.util.Arrays.equals(payload,row.getBytes(1)) || !digest.equals(row.getString(2))) return false;
-                    }
-                }
-                connection.commit();
-                return true;
-            } finally { connection.rollback(); }
+            try { return SQLiteCrownReclamations.stage(connection, request, payload); }
+            finally { connection.rollback(); }
         });
     }
 
@@ -141,10 +123,10 @@ public final class SQLiteCrownHelmetEvidenceStore implements CrownHelmetEvidence
     public CompletionStage<Boolean> matchesSavedHelmet(ExclusiveCustodyReservation reservation, byte[] original) {
         return journal.matchesSavedHelmet(storage, reservation, original);
     }
-    public CompletionStage<java.util.Optional<String>> commitEquipment(ExclusiveCustodyReservation request, byte[] savedOriginal) {
+    public CompletionStage<Optional<String>> commitEquipment(ExclusiveCustodyReservation request, byte[] savedOriginal) {
         return journal.commitEquipment(storage, request, savedOriginal);
     }
-    public CompletionStage<java.util.Optional<String>> readEquipment(ExclusiveCustodyReservation request) {
+    public CompletionStage<Optional<String>> readEquipment(ExclusiveCustodyReservation request) {
         return journal.readEquipment(storage, request);
     }
     @Override
@@ -291,7 +273,8 @@ public final class SQLiteCrownHelmetEvidenceStore implements CrownHelmetEvidence
                     LEFT JOIN crown_recovery_delivery d ON d.source_operation=c.operation_id
                     WHERE c.singleton=1""") ; var rows = query.executeQuery()) {
                 if (!rows.next()) return Optional.empty();
-                String recipient = rows.getString(6), delivery = rows.getString(7);
+                String recipient = rows.getString(6);
+                String delivery = rows.getString(7);
                 Optional<PendingTransfer> transfer = recipient == null ? Optional.empty()
                         : Optional.of(new PendingTransfer(UUID.fromString(recipient),
                                 Optional.ofNullable(delivery).map(UUID::fromString), rows.getInt(8) == 1));

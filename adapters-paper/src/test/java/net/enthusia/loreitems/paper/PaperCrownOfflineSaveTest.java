@@ -12,8 +12,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PaperCrownOfflineSaveTest {
     @TempDir Path directory;
-    final UUID holder=UUID.randomUUID(), instance=UUID.randomUUID(), definition=UUID.randomUUID();
-    final UUID source=UUID.randomUUID(), operation=UUID.randomUUID();
+    final UUID holder=UUID.randomUUID();
+    final UUID instance=UUID.randomUUID();
+    final UUID definition=UUID.randomUUID();
+    final UUID source=UUID.randomUUID();
+    final UUID operation=UUID.randomUUID();
     final String prefix="enthusialoreitems:";
     CrownEquipmentRecovery.Reclamation request() {
         return new CrownEquipmentRecovery.Reclamation(operation,new CrownEquipmentRecovery.Receipt(

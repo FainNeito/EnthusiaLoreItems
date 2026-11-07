@@ -201,6 +201,7 @@ still outside this fixture. No TEST artifact is authorized by this result.
 The SQLite adapter now retires the stored helmet payload and records EQUIPPED in a single transaction after checking the reservation, original bytes, digest and audit. A matching replay reads the receipt. A review hold or changed identity prevents finalization. Paper rechecks the worn Crown and the operation-specific escrow, replaces the original bytes with the digest marker and saves the player. The caller must supply exclusive player access and a freshly loaded save.
 
 Paper 1.21.11 build 130 with a disposable player:
+
 - phase9.log: rejected a deliberately wrong original, verified the original remained, committed the decision, then forcibly stopped the JVM before Paper cleanup.
 - phase10.log: reloaded the still-staged helmet, read the receipt, rejected a wrong digest, saved the cleanup, then forcibly stopped the second JVM.
 - phase11.log: verified the same player had the Crown equipped, the original escrow was gone and the receipt marker matched. Replaying cleanup made no new equipment.

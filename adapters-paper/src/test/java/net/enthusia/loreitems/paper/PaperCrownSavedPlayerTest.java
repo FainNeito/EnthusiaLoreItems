@@ -20,7 +20,8 @@ class PaperCrownSavedPlayerTest {
         assertThrows(IllegalArgumentException.class, () -> PaperCrownSavedPlayer.playerDirectory(temporary,"future"));
     }
     @Test void detectsNestedDuplicatesAndConflictingIdentities() {
-        UUID instance=UUID.randomUUID(), definition=UUID.randomUUID();
+        UUID instance=UUID.randomUUID();
+        UUID definition=UUID.randomUUID();
         var item=CompoundBinaryTag.builder().putByteArray("enthusialoreitems:instance_id",bytes(instance))
                 .putByteArray("enthusialoreitems:definition_id",bytes(definition)).build();
         assertEquals(1,PaperCrownSavedPlayer.count(item,instance,definition,0));

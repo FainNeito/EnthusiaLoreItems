@@ -258,7 +258,9 @@ public final class PaperCrownJoinRecovery implements Listener {
         try {
             String[] ids = session.getPersistentDataContainer().get(marker, org.bukkit.persistence.PersistentDataType.STRING).split("/", -1);
             if (ids.length != 3) return;
-            UUID operation = UUID.fromString(ids[0]), instance = UUID.fromString(ids[1]), definition = UUID.fromString(ids[2]);
+            UUID operation = UUID.fromString(ids[0]);
+            UUID instance = UUID.fromString(ids[1]);
+            UUID definition = UUID.fromString(ids[2]);
             if (!absentEverywhere(session, instance, definition)) return;
             String expected = operation + "/" + instance + "/" + definition;
             recovery.confirmSourceReleased(session.getUniqueId(), operation, instance, definition).thenAcceptAsync(
