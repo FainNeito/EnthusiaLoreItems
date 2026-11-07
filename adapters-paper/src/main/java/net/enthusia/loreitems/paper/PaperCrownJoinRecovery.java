@@ -18,6 +18,9 @@ public final class PaperCrownJoinRecovery implements Listener {
     private final CrownEquipmentRecovery recovery;
     private final BooleanSupplier active;
     private final PaperCrownSlotExchange exchange = new PaperCrownSlotExchange(PaperItemCodecThreadGuard.system());
+    /** Recipients refused only for lack of a slot for their worn helmet; retried once space appears. */
+    private final java.util.Set<UUID> awaitingSpace = new java.util.HashSet<>();
+    static final long SPACE_RETRY_TICKS = 40L;
 
     public PaperCrownJoinRecovery(Plugin plugin, CrownEquipmentRecovery recovery, BooleanSupplier active) {
         this.plugin = plugin;
@@ -28,7 +31,21 @@ public final class PaperCrownJoinRecovery implements Listener {
     public void register() {
         if (!active.getAsBoolean()) return;
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        plugin.getServer().getScheduler().runTaskTimer(plugin, this::retryAwaitingSpace, SPACE_RETRY_TICKS, SPACE_RETRY_TICKS);
         plugin.getServer().getOnlinePlayers().forEach(player -> recover(player, false));
+    }
+
+    private void retryAwaitingSpace() {
+        for (UUID id : java.util.List.copyOf(awaitingSpace)) {
+            var player = plugin.getServer().getPlayer(id);
+            if (player == null) awaitingSpace.remove(id);
+            else if (canReceive(player)) receive(player);
+        }
+    }
+
+    @EventHandler
+    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        awaitingSpace.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = org.bukkit.event.EventPriority.HIGHEST, ignoreCancelled = true)
@@ -296,7 +313,12 @@ public final class PaperCrownJoinRecovery implements Listener {
     }
 
     private void receive(Player player) {
-        if (!canReceive(player)) return;
+        if (!canReceive(player)) {
+            if (active.getAsBoolean() && player.isOnline() && !player.isDead()
+                    && !player.getPersistentDataContainer().has(ESCROW)) awaitingSpace.add(player.getUniqueId());
+            return;
+        }
+        awaitingSpace.remove(player.getUniqueId());
         recovery.takeReleased(player.getUniqueId()).thenAcceptAsync(result -> {
             if (result.isEmpty()) {
                 reportUnconfirmedDelivery(player);
