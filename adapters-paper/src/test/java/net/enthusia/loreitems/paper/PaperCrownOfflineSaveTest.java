@@ -41,8 +41,15 @@ class PaperCrownOfflineSaveTest {
     Path primary(){return directory.resolve(holder+".dat");}
     Path backup(){return directory.resolve(holder+".dat_old");}
     void write(Path file,CompoundBinaryTag value) throws Exception {BinaryTagIO.writer().write(value,file,BinaryTagIO.Compression.GZIP);}
-    @Test void removesBothLoadableCopiesAndPreservesOriginalEvidenceAndUnrelatedData() throws Exception {
-        write(primary(),save());write(backup(),save().putInt("older",1));
+    @Test void failedReplaceLeavesNoTemporaryCopyBesideTheSave() throws Exception {
+        Path target=directory.resolve(holder+".dat");
+        Files.createDirectories(target.resolve("occupied"));
+        assertThrows(java.io.IOException.class, () -> PaperCrownOfflineSave.replace(target,new byte[]{1,2,3}));
+        try (var siblings=Files.list(directory)) {
+            assertTrue(siblings.noneMatch(path -> path.getFileName().toString().contains(".crown-")));
+        }
+    }
+    @Test void removesBothLoadableCopiesAndPreservesOriginalEvidenceAndUnrelatedData() throws Exception {        write(primary(),save());write(backup(),save().putInt("older",1));
         byte[] original=Files.readAllBytes(primary());
         var prepared=PaperCrownOfflineSave.prepare(directory,request());
         assertNotNull(prepared.crown());

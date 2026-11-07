@@ -101,11 +101,17 @@ final class PaperCrownOfflineSave {
         }
     }
 
-    private static void replace(Path target, byte[] bytes) throws IOException {
+    /** A failed write or move removes its temporary sibling so no partial copy is left beside the save. */
+    static void replace(Path target, byte[] bytes) throws IOException {
         Path temporary=target.resolveSibling(target.getFileName()+".crown-"+UUID.randomUUID()+".tmp");
         Files.write(temporary,bytes,StandardOpenOption.CREATE_NEW);
-        try(var channel=FileChannel.open(temporary,StandardOpenOption.WRITE)){channel.force(true);}
-        Files.move(temporary,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+        try {
+            try(var channel=FileChannel.open(temporary,StandardOpenOption.WRITE)){channel.force(true);}
+            Files.move(temporary,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException | RuntimeException failure) {
+            try { Files.deleteIfExists(temporary); } catch (IOException cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        }
     }
 
     private static byte[] bytes(Path file) throws IOException {
