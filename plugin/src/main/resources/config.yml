@@ -24,3 +24,11 @@ storage-defaults.ender-chests: true
 # item-storage.11111111-1111-1111-1111-111111111111.shulkers: false
 # item-storage.11111111-1111-1111-1111-111111111111.bundles: false
 # item-storage.11111111-1111-1111-1111-111111111111.ender-chests: true
+
+crown-first-award-enabled: false
+crown-first-award-definition-id: ""
+crown-first-award-revision: 0
+
+# Requires the verified Paper 26.2 offline save layout; activate only after TEST acceptance.
+crown-reclamation-offline-enabled: false
+crown-recovery-events-enabled: false

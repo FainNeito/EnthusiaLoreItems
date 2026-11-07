@@ -12,6 +12,12 @@ final class SQLiteSchemaHealthVerifier {
     private static final String SQLITE_OK = "ok";
     private static final List<SchemaObject> REQUIRED_OBJECTS = List.of(
             table("schema_history"),
+            table("crown_reclamation"),
+            table("crown_reclamation_escrow"),
+            table("crown_recovery_delivery"),
+            table("crown_custody"),
+            table("crown_custody_audit"),
+            table("crown_helmet_evidence"),
             table("lore_definitions"),
             table("lore_definition_revisions"),
             table("lore_instances"),
