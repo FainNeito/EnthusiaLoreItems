@@ -47,6 +47,10 @@ public interface CrownEquipmentRecovery {
     default CompletionStage<Optional<Delivery>> takeReleased(UUID killer) {
         return java.util.concurrent.CompletableFuture.completedFuture(Optional.empty());
     }
+    /** Returns a claimed grant whose recipient left or died before anything was equipped, so it can be taken again. */
+    default CompletionStage<Boolean> returnUnequippedGrant(Delivery delivery) {
+        return java.util.concurrent.CompletableFuture.completedFuture(false);
+    }
     /** An existing delivery grant with no committed destination receipt. Never authorizes reissue. */
     default CompletionStage<Boolean> hasUnconfirmedDelivery(UUID holder) {
         return java.util.concurrent.CompletableFuture.completedFuture(false);

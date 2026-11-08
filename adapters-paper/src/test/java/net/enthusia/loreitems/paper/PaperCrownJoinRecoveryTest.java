@@ -58,6 +58,20 @@ class PaperCrownJoinRecoveryTest {
         assertEquals(1, attempts.get());
     }
 
+    @Test void recipientWhoWasDeadIsDeliveredOnRespawn() {
+        var joins = new PaperCrownJoinRecovery(plugin, recovery, () -> true);
+        joins.register();
+        PlayerMock player = fullWithHelmet();
+        player.setHealth(0);
+        attempts.set(0);
+        joins.deliver(player.getUniqueId());
+        server.getScheduler().performOneTick();
+        assertEquals(0, attempts.get());
+        player.respawn();
+        server.getScheduler().performTicks(2);
+        assertEquals(1, attempts.get());
+    }
+
     @Test void deadRecipientIsNotDelivered() {
         var joins = new PaperCrownJoinRecovery(plugin, recovery, () -> true);
         joins.register();

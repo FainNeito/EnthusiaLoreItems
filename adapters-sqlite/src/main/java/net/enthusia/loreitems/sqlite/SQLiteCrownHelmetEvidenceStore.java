@@ -229,6 +229,36 @@ public final class SQLiteCrownHelmetEvidenceStore implements CrownHelmetEvidence
     }
 
     @Override
+    public CompletionStage<Boolean> returnUnequippedGrant(Delivery delivery) {
+        var destination = delivery.destination();
+        return storage.execute(connection -> {
+            connection.setAutoCommit(false);
+            try {
+                // A committed successor means the Crown was equipped; that grant is never reopened.
+                try (var committed = connection.prepareStatement("SELECT 1 FROM crown_custody WHERE operation_id=?")) {
+                    committed.setString(1, destination.operationId().toString());
+                    try (var row = committed.executeQuery()) { if (row.next()) return false; }
+                }
+                int returned = 0;
+                try (var handoff = connection.prepareStatement("""
+                        UPDATE crown_handoff_escrow SET recipient_operation=NULL WHERE recipient_operation=?
+                        AND operation_id IN (SELECT operation_id FROM crown_succession_requests WHERE killer_id=?)""")) {
+                    handoff.setString(1, destination.operationId().toString()); handoff.setString(2, destination.holderId().toString());
+                    returned += handoff.executeUpdate();
+                }
+                try (var recoveryGrant = connection.prepareStatement(
+                        "UPDATE crown_recovery_delivery SET recipient_operation=NULL WHERE recipient_operation=? AND winner_id=?")) {
+                    recoveryGrant.setString(1, destination.operationId().toString()); recoveryGrant.setString(2, destination.holderId().toString());
+                    returned += recoveryGrant.executeUpdate();
+                }
+                if (returned != 1) return false;
+                connection.commit();
+                return true;
+            } finally { connection.rollback(); }
+        });
+    }
+
+    @Override
     public CompletionStage<Optional<Delivery>> takeReleased(UUID killer) {
         return storage.execute(connection -> {
             connection.setAutoCommit(false);
