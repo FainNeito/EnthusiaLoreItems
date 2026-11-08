@@ -173,7 +173,16 @@ class SQLiteCrownIdentityAuditTest {
         assertFalse(store.hasUnconfirmedDelivery(UUID.randomUUID()).toCompletableFuture().join());
         assertTrue(java.util.Arrays.equals(crown, transfer.crown()));
         assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
-        return transfer;
+        // A killer who died or left before equipping returns the claim; it is then taken again under a new operation.
+        assertFalse(store.returnUnequippedGrant(new CrownEquipmentRecovery.Delivery(new ExclusiveCustodyReservation(
+                transfer.destination().operationId(), request.instanceId(), UUID.randomUUID(), 2,
+                ExclusiveCustodyReservation.State.RESERVED), definition, crown)).toCompletableFuture().join());
+        assertTrue(store.returnUnequippedGrant(transfer).toCompletableFuture().join());
+        assertFalse(store.returnUnequippedGrant(transfer).toCompletableFuture().join());
+        var retaken = store.takeReleased(killer).toCompletableFuture().join().orElseThrow();
+        assertFalse(transfer.destination().operationId().equals(retaken.destination().operationId()));
+        assertTrue(store.takeReleased(killer).toCompletableFuture().join().isEmpty());
+        return retaken;
     }
 
     private static void commitSuccessorAfterInjectedFailure(SQLiteStorageRuntime reopened, SQLiteCrownHelmetEvidenceStore store,
@@ -250,12 +259,15 @@ class SQLiteCrownIdentityAuditTest {
         assertEquals(conflict,store.reserveRecoveryWinner(reclamation,request.instanceId(),killer,2,recoveryMatch,UUID.randomUUID()).toCompletableFuture().join());
         assertTrue(store.releasedReclamation(killer,reclamation).toCompletableFuture().join().isPresent());
         var recovered=store.takeReleased(request.holderId()).toCompletableFuture().join().orElseThrow();
+        assertTrue(store.returnUnequippedGrant(recovered).toCompletableFuture().join());
+        recovered=store.takeReleased(request.holderId()).toCompletableFuture().join().orElseThrow();
         assertArrayEquals(crown,recovered.crown());
         assertEquals(3,recovered.destination().generation());
         assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
         assertTrue(store.hasUnconfirmedDelivery(request.holderId()).toCompletableFuture().join());
         assertFalse(store.commitSuccessor(recovered.destination(),UUID.randomUUID()).toCompletableFuture().join());
         assertTrue(store.commitSuccessor(recovered.destination(),recovered.definition()).toCompletableFuture().join());
+        assertFalse(store.returnUnequippedGrant(recovered).toCompletableFuture().join());
         assertFalse(store.hasUnconfirmedDelivery(request.holderId()).toCompletableFuture().join());
         assertTrue(store.takeReleased(request.holderId()).toCompletableFuture().join().isEmpty());
         assertEquals(recovered.destination(),store.findEquipped(request.holderId()).toCompletableFuture().join().orElseThrow().reservation());

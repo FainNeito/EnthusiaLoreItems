@@ -137,7 +137,8 @@ public final class PaperCrownJoinRecovery implements Listener {
         if (!active.getAsBoolean()) return;
         var data = session.getPersistentDataContainer();
         if (!data.has(ESCROW)) {
-            if (freshJoin) receive(session);
+            // A recipient who was dead or offline when the Crown was released takes it on respawn as well as on join.
+            receive(session);
             return;
         }
         if (data.has(RECLAIMED)) {
@@ -314,8 +315,13 @@ public final class PaperCrownJoinRecovery implements Listener {
 
     private void equipDelivered(Player player, CrownEquipmentRecovery.Delivery delivery) {
         var request = delivery.destination();
-        if (!canReceive(player) || !current(player, request.holderId()))
-            throw new IllegalStateException("Recipient changed after Crown reservation " + request.operationId());
+        if (!canReceive(player) || !current(player, request.holderId())) {
+            // Nothing has been placed yet, so the claim goes back for the recipient's next respawn or join.
+            recovery.returnUnequippedGrant(delivery).thenAccept(returned -> {
+                if (!returned) plugin.getLogger().warning("Crown delivery requires review for " + request.operationId());
+            }).exceptionally(this::reportFailure);
+            return;
+        }
         var crown = org.bukkit.inventory.ItemStack.deserializeBytes(delivery.crown());
         if (!deliverable(player, crown, request, delivery.definition()))
             throw new IllegalStateException("Conflicting Crown identity on delivery " + request.operationId());
@@ -324,12 +330,28 @@ public final class PaperCrownJoinRecovery implements Listener {
         var data = player.getPersistentDataContainer();
         data.set(ESCROW,org.bukkit.persistence.PersistentDataType.TAG_CONTAINER,successorEscrow(data, request));
         data.set(new NamespacedKey(plugin,"crown_incoming"),org.bukkit.persistence.PersistentDataType.STRING,delivery.definition().toString());
-        // The recipient's worn helmet is destroyed, not stored, so delivery is instant even with a full inventory.
-        if (prior != null && !prior.getType().isAir())
-            plugin.getLogger().info("Crown delivery " + request.operationId() + " replaced " + player.getName() + "'s " + prior.getType());
+        if (prior != null && !prior.getType().isAir()) displaceHelmet(player, prior, request);
         inventory.setHelmet(crown);
         player.saveData();
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> finalizeWhenSaved(player, request), 20L);
+    }
+
+    /**
+     * The recipient's worn helmet is destroyed, so delivery is instant even with a full inventory. A tracked LoreItems
+     * helmet is never destroyed outside its lifecycle: it moves to a free slot, or drops at the recipient's feet.
+     */
+    private void displaceHelmet(Player player, org.bukkit.inventory.ItemStack prior, ExclusiveCustodyReservation request) {
+        var identity = new PaperItemIdentityCodec(PaperItemCodecThreadGuard.system()).readIdentity(prior);
+        if (!(identity instanceof net.enthusia.loreitems.application.ItemIdentityReadResult.Tracked)) {
+            plugin.getLogger().info("Crown delivery " + request.operationId() + " replaced " + player.getName() + "'s " + prior.getType());
+            return;
+        }
+        var inventory = player.getInventory();
+        int free = inventory.firstEmpty();
+        if (free >= 0) inventory.setItem(free, prior);
+        else player.getWorld().dropItem(player.getLocation(), prior);
+        plugin.getLogger().info("Crown delivery " + request.operationId() + " moved " + player.getName() + "'s tracked "
+                + prior.getType() + (free >= 0 ? " into their inventory" : " to the ground at their feet"));
     }
 
     /** Identity is read before the shape checks, as in the original single-condition form. */
