@@ -31,6 +31,11 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
     private final LoreItemsAdministrationCommandExecutor administrationExecutor;
     private final LoreItemsDestructiveCommandExecutor destructiveExecutor;
     private final FoundationConfigurationReloadCommandExecutor reloadExecutor;
+    private CommandExecutor crownInspection;
+
+    public void setCrownInspection(CommandExecutor inspection) {
+        this.crownInspection = Objects.requireNonNull(inspection, "inspection");
+    }
 
     public LoreItemsCommandExecutor(
             CreateDefinitionCommandExecutor createExecutor,
@@ -117,6 +122,7 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
             return true;
         }
         String subcommand = arguments[0].toLowerCase(Locale.ROOT);
+        if (subcommand.equals("crown")) return executeCrown(sender, command, label, arguments);
         return switch (subcommand) {
             case CREATE_SUBCOMMAND -> createExecutor.onCommand(sender, command, label, arguments);
             case ADOPT_SUBCOMMAND -> adoptExecutor.onCommand(sender, command, label, arguments);
@@ -130,6 +136,12 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
         };
     }
 
+    private boolean executeCrown(CommandSender sender, Command command, String label, String[] arguments) {
+        if (crownInspection != null) return crownInspection.onCommand(sender, command, label, arguments);
+        sender.sendMessage("Crown custody inspection is unavailable.");
+        return true;
+    }
+
     @Override
     public List<String> onTabComplete(
             CommandSender sender,
@@ -140,6 +152,14 @@ public final class LoreItemsCommandExecutor implements CommandExecutor, TabCompl
         Objects.requireNonNull(command, "command");
         Objects.requireNonNull(alias, "alias");
         Objects.requireNonNull(arguments, "arguments");
+        if (arguments.length == 1 && crownInspection != null
+                && sender.hasPermission(LoreItemsAdministrationCommandExecutor.AUDIT_PERMISSION)
+                && "crown".startsWith(arguments[0].toLowerCase(Locale.ROOT))) {
+            var completions = new ArrayList<>(topLevelCompletions(sender, arguments[0],
+                    administrationExecutor != null, destructiveExecutor != null, reloadExecutor != null));
+            completions.add("crown");
+            return List.copyOf(completions);
+        }
         if (arguments.length == 1) {
             return topLevelCompletions(
                     sender,

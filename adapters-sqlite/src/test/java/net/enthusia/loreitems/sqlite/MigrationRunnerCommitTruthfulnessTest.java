@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class MigrationRunnerCommitTruthfulnessTest {
-    private static final int EXPECTED_SCHEMA_VERSION_COUNT = 11;
+    private static final int EXPECTED_SCHEMA_VERSION_COUNT = 18;
     private static final String SET_AUTO_COMMIT = "setAutoCommit";
     private static final String COMMIT = "commit";
 

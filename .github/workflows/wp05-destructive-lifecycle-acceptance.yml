@@ -337,7 +337,7 @@ jobs:
           root=Path('/tmp/wp05-dest-lifecycle')
           c=sqlite3.connect(db); c.row_factory=sqlite3.Row
           versions=[r[0] for r in c.execute('select version from schema_history order by version')]
-          assert versions==list(range(1,12)), versions
+          assert versions==list(range(1,19)), versions
           integrity=[r[0] for r in c.execute('pragma integrity_check')]
           foreign=[list(r) for r in c.execute('pragma foreign_key_check')]
           assert integrity==['ok'], integrity

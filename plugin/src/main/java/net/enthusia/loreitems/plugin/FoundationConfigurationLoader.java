@@ -16,6 +16,9 @@ final class FoundationConfigurationLoader {
     private static final int NO_COMMENT_INDEX = -1;
 
     private static final Set<String> KNOWN_KEYS = Set.of(
+            "crown-reclamation-offline-enabled",
+            "crown-recovery-events-enabled",
+            "crown-first-award-enabled", "crown-first-award-definition-id", "crown-first-award-revision",
             "database-busy-timeout-millis",
             "database-queue-capacity",
             "database-shutdown-timeout-seconds",
@@ -70,6 +73,8 @@ final class FoundationConfigurationLoader {
                 throw new IllegalArgumentException("Duplicate config key: " + key);
             }
         }
+        bool(values, "crown-reclamation-offline-enabled", false);
+        bool(values, "crown-recovery-events-enabled", false);
         return new FoundationConfiguration(
                 integer(values, "database-busy-timeout-millis", defaults.databaseBusyTimeoutMillis()),
                 integer(values, "database-queue-capacity", defaults.databaseQueueCapacity()),

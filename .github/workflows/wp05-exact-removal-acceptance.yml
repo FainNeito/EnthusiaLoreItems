@@ -213,7 +213,7 @@ jobs:
           root=Path('/tmp/wp05-dest-exact')
           c=sqlite3.connect(db);c.row_factory=sqlite3.Row
           versions=[r[0] for r in c.execute('select version from schema_history order by version')]
-          assert versions==list(range(1,12)), versions
+          assert versions==list(range(1,19)), versions
           definition=dict(c.execute("select lookup_key,display_name,current_revision,deleted_at from lore_definitions where lookup_key='acc_dest_exact'").fetchone())
           target_lifecycle=dict(c.execute('select lifecycle_state,terminal_at is not null as terminal from lore_instances where instance_id=?',(target,)).fetchone())
           sibling_lifecycle=dict(c.execute('select lifecycle_state,terminal_at is not null as terminal from lore_instances where instance_id=?',(sibling,)).fetchone())
