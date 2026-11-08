@@ -39,7 +39,7 @@ class PaperCrownJoinRecoveryTest {
 
     @AfterEach void tearDown() { MockBukkit.unmock(); }
 
-    /** Joined with a worn helmet and every other slot occupied; the join itself makes no delivery attempt. */
+    /** Joined with a worn helmet and every other slot occupied; the join's own delivery attempt is not counted. */
     private PlayerMock fullWithHelmet() {
         PlayerMock player = server.addPlayer();
         var inventory = player.getInventory();
@@ -49,30 +49,23 @@ class PaperCrownJoinRecoveryTest {
         return player;
     }
 
-    @Test void deliveryRefusedForLackOfSpaceIsRetriedOnceASlotFrees() {
-        var joins = new PaperCrownJoinRecovery(plugin, recovery, () -> true);
-        joins.register();
-        PlayerMock player = fullWithHelmet();
-        joins.deliver(player.getUniqueId());
-        server.getScheduler().performTicks(PaperCrownJoinRecovery.SPACE_RETRY_TICKS * 2);
-        assertEquals(0, attempts.get());
-
-        player.getInventory().setItem(7, null);
-        server.getScheduler().performTicks(PaperCrownJoinRecovery.SPACE_RETRY_TICKS);
-        assertEquals(1, attempts.get());
-        server.getScheduler().performTicks(PaperCrownJoinRecovery.SPACE_RETRY_TICKS * 2);
-        assertEquals(1, attempts.get());
-    }
-
-    @Test void recipientWhoLeftIsNotRetried() {
+    @Test void fullRecipientWearingAHelmetIsDeliveredAtOnce() {
         var joins = new PaperCrownJoinRecovery(plugin, recovery, () -> true);
         joins.register();
         PlayerMock player = fullWithHelmet();
         joins.deliver(player.getUniqueId());
         server.getScheduler().performOneTick();
-        player.disconnect();
-        player.getInventory().setItem(7, null);
-        server.getScheduler().performTicks(PaperCrownJoinRecovery.SPACE_RETRY_TICKS * 2);
+        assertEquals(1, attempts.get());
+    }
+
+    @Test void deadRecipientIsNotDelivered() {
+        var joins = new PaperCrownJoinRecovery(plugin, recovery, () -> true);
+        joins.register();
+        PlayerMock player = fullWithHelmet();
+        player.setHealth(0);
+        attempts.set(0);
+        joins.deliver(player.getUniqueId());
+        server.getScheduler().performOneTick();
         assertEquals(0, attempts.get());
     }
 }

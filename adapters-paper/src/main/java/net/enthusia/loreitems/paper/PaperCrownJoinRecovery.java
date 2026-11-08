@@ -18,9 +18,6 @@ public final class PaperCrownJoinRecovery implements Listener {
     private final CrownEquipmentRecovery recovery;
     private final BooleanSupplier active;
     private final PaperCrownSlotExchange exchange = new PaperCrownSlotExchange(PaperItemCodecThreadGuard.system());
-    /** Recipients refused only for lack of a slot for their worn helmet; retried once space appears. */
-    private final java.util.Set<UUID> awaitingSpace = new java.util.HashSet<>();
-    static final long SPACE_RETRY_TICKS = 40L;
 
     public PaperCrownJoinRecovery(Plugin plugin, CrownEquipmentRecovery recovery, BooleanSupplier active) {
         this.plugin = plugin;
@@ -31,21 +28,7 @@ public final class PaperCrownJoinRecovery implements Listener {
     public void register() {
         if (!active.getAsBoolean()) return;
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
-        plugin.getServer().getScheduler().runTaskTimer(plugin, this::retryAwaitingSpace, SPACE_RETRY_TICKS, SPACE_RETRY_TICKS);
         plugin.getServer().getOnlinePlayers().forEach(player -> recover(player, false));
-    }
-
-    private void retryAwaitingSpace() {
-        for (UUID id : java.util.List.copyOf(awaitingSpace)) {
-            var player = plugin.getServer().getPlayer(id);
-            if (player == null) awaitingSpace.remove(id);
-            else if (canReceive(player)) receive(player);
-        }
-    }
-
-    @EventHandler
-    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
-        awaitingSpace.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = org.bukkit.event.EventPriority.HIGHEST, ignoreCancelled = true)
@@ -306,19 +289,13 @@ public final class PaperCrownJoinRecovery implements Listener {
         if (recipient != null) receive(recipient);
     }
 
+    /** A worn helmet never blocks delivery: the Crown replaces it. */
     private boolean canReceive(Player player) {
-        if (!active.getAsBoolean() || !player.isOnline() || player.isDead() || player.getPersistentDataContainer().has(ESCROW)) return false;
-        var helmet = player.getInventory().getHelmet();
-        return helmet == null || helmet.getType().isAir() || player.getInventory().firstEmpty() >= 0;
+        return active.getAsBoolean() && player.isOnline() && !player.isDead() && !player.getPersistentDataContainer().has(ESCROW);
     }
 
     private void receive(Player player) {
-        if (!canReceive(player)) {
-            if (active.getAsBoolean() && player.isOnline() && !player.isDead()
-                    && !player.getPersistentDataContainer().has(ESCROW)) awaitingSpace.add(player.getUniqueId());
-            return;
-        }
-        awaitingSpace.remove(player.getUniqueId());
+        if (!canReceive(player)) return;
         recovery.takeReleased(player.getUniqueId()).thenAcceptAsync(result -> {
             if (result.isEmpty()) {
                 reportUnconfirmedDelivery(player);
@@ -347,7 +324,9 @@ public final class PaperCrownJoinRecovery implements Listener {
         var data = player.getPersistentDataContainer();
         data.set(ESCROW,org.bukkit.persistence.PersistentDataType.TAG_CONTAINER,successorEscrow(data, request));
         data.set(new NamespacedKey(plugin,"crown_incoming"),org.bukkit.persistence.PersistentDataType.STRING,delivery.definition().toString());
-        if (prior != null && !prior.getType().isAir()) inventory.setItem(inventory.firstEmpty(),prior);
+        // The recipient's worn helmet is destroyed, not stored, so delivery is instant even with a full inventory.
+        if (prior != null && !prior.getType().isAir())
+            plugin.getLogger().info("Crown delivery " + request.operationId() + " replaced " + player.getName() + "'s " + prior.getType());
         inventory.setHelmet(crown);
         player.saveData();
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> finalizeWhenSaved(player, request), 20L);
@@ -372,7 +351,7 @@ public final class PaperCrownJoinRecovery implements Listener {
         escrow.set(new NamespacedKey(plugin,"holder"),text,request.holderId().toString());
         escrow.set(new NamespacedKey(plugin,"instance"),text,request.instanceId().toString());
         escrow.set(new NamespacedKey(plugin,"generation"),org.bukkit.persistence.PersistentDataType.LONG,request.generation());
-        // A successor's own helmet is moved intact; there is no sacrificed item.
+        // A successor's replaced helmet is destroyed and not recorded as a sacrificed item.
         escrow.set(new NamespacedKey(plugin,"consumed"),text,"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         return escrow;
     }
