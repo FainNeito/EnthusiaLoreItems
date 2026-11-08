@@ -48,7 +48,7 @@ class MigrationRunnerV11VoidDestructiveReconciliationTest {
             seedTarget(connection, OP_CLAIMED, VOID_CLAIMED, STATE_CLAIMED, EFFECT_UNKNOWN);
             seedTarget(connection, OP_REVIEW, VOID_REVIEW, "REVIEW_REQUIRED", "AMBIGUOUS");
 
-            runner.migrate(connection);
+            runner.migrateThrough(connection, 11);
 
             assertEquals(11, schemaVersion(connection));
             assertTarget(connection, OP_COMPLETE, "COMPLETED", "REMOVED_OBSERVED");
@@ -61,7 +61,7 @@ class MigrationRunnerV11VoidDestructiveReconciliationTest {
             assertTarget(connection, OP_REVIEW, "REVIEW_REQUIRED", "AMBIGUOUS");
             assertEquals("PAUSED", operationState(connection, OP_REVIEW));
 
-            runner.migrate(connection);
+            runner.migrateThrough(connection, 11);
             assertEquals(1, migrationAuditCount(connection, OP_COMPLETE));
         }
     }

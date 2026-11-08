@@ -24,7 +24,14 @@ public final class MigrationRunner {
             new Migration(8, "canonicalize adopted player locations", "db/migration/V8__canonicalize_adopted_player_locations.sql"),
             new Migration(9, "canonicalize player inventory locations", "db/migration/V9__canonicalize_player_inventory_locations.sql"),
             new Migration(10, "item display observation support", "db/migration/V10__item_display_observation_support.sql"),
-            new Migration(11, "reconcile terminal void destructive targets", "db/migration/V11__reconcile_void_destroyed_destructive_targets.sql"));
+            new Migration(11, "reconcile terminal void destructive targets", "db/migration/V11__reconcile_void_destroyed_destructive_targets.sql"),
+            new Migration(12, "Crown helmet custody", "db/migration/V12__crown_custody.sql"),
+            new Migration(13, "Crown PvP succession requests", "db/migration/V13__crown_succession.sql"),
+            new Migration(14, "Crown handoff escrow", "db/migration/V14__crown_handoff.sql"),
+            new Migration(15, "Crown successor receipts", "db/migration/V15__crown_successor.sql"),
+            new Migration(16, "Crown reclamation reservations", "db/migration/V16__crown_reclamation.sql"),
+            new Migration(17, "Crown reclamation escrow", "db/migration/V17__crown_reclamation_escrow.sql"),
+            new Migration(18, "Crown recovery delivery", "db/migration/V18__crown_recovery_delivery.sql"));
     private static final int LATEST_SCHEMA_VERSION = MIGRATIONS.getLast().version();
 
     public void migrate(Connection connection) throws SQLException {

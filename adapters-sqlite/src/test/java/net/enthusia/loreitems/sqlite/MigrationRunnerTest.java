@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class MigrationRunnerTest {
-    private static final int EXPECTED_SCHEMA_VERSION_COUNT = 11;
+    private static final int EXPECTED_SCHEMA_VERSION_COUNT = 18;
     private static final String DEFINITION_ID = "10000000-0000-0000-0000-000000000001";
     private static final String INSTANCE_ID = "20000000-0000-0000-0000-000000000001";
     private static final String PENDING_MUTATION_ID =

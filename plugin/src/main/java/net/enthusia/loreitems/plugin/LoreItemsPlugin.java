@@ -106,6 +106,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
     private volatile DistributionRuntime distributionRuntime;
     private volatile boolean shutdownCleanupComplete = true;
     private volatile boolean stopping;
+    private CrownRecoveryActivation crown;
 
     @Override
     public void onEnable() {
@@ -115,15 +116,13 @@ public final class LoreItemsPlugin extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
+        crown = new CrownRecoveryActivation(this, () -> !stopping);
         registerCommands();
         if (!activateProtectionListeners()) {
             return;
         }
         getServer().getServicesManager().register(
-                LoreItemsServiceV1.class,
-                registeredService,
-                this,
-                ServicePriority.Normal);
+                LoreItemsServiceV1.class, registeredService, this, ServicePriority.Normal);
         Path dataDirectory = getDataFolder().toPath();
         try {
             lifecycleExecutor.execute(() -> initialize(dataDirectory));
@@ -252,6 +251,7 @@ public final class LoreItemsPlugin extends JavaPlugin {
             shutdownCleanupComplete = false;
             setUnavailableDelegates("The plugin is stopping.");
         }
+        closeQuietly(crown, "offline Crown recovery");
         creativeSupport.clear();
         CompletionStage<Void> trackingQuiescence = PaperTrackingCoordinator.quiescenceFor(this);
         shutdownTrackingQuiescence = trackingQuiescence;
@@ -429,14 +429,12 @@ public final class LoreItemsPlugin extends JavaPlugin {
                 () -> activateDistributionRuntime(runtime, loaded))) {
             return;
         }
+        crown.activate(runtime, () -> !stopping && storageRuntime == runtime);
         getLogger().info(
-                "Durable storage is active; definition creation, adoption, protection, "
-                        + "physical tracking, display observations, terminal void loss, and "
-                        + "mass distributions are available. Delivery, recovery, anomaly, "
-                        + "tracking, and administration components are activating on the "
-                        + "server thread.");
+                "Durable storage is active; definition creation, adoption, protection, physical tracking, "
+                        + "display observations, terminal void loss, and mass distributions are available. Delivery, "
+                        + "recovery, anomaly, tracking, and administration components are activating on the server thread.");
     }
-
     private boolean activateTrackingListeners(
             TrackingObservationUseCase useCase,
             MetricsPort metrics) {
